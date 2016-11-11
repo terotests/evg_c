@@ -1,0 +1,6 @@
+<View padding="5px" margin="3px" margin-left="4" height="180px" id="barbar" background-color="#51C6ED"
+        linear-gradient="#31a6ED,#51C6ED"
+        shadow-radius="1px"
+        
+        >
+</View>

@@ -1,0 +1,194 @@
+<View padding="20" >
+
+
+
+
+<!-- Shadow generation is slow -->
+    <View width="500">
+        <View width="500" background-color="#222222" padding="10" border-radius="20px"
+            >
+            
+            <View width="100%" align="center" padding="6px">
+                <View
+                background-color="#ffffff" width="50px" height="10px"
+                border-radius="15px"
+                />
+            </View>
+            <View width="480" height="800" overflow="hidden" id="screen" background-color="#ffffff">
+                <View id="scroll" left="0" top="0">
+                    
+    
+<View width="100%" padding="10px" linear-gradient="rgba(18, 18, 150, 0.7), rgba(242, 162, 242, 0.7)" background-color="#f2a2f2">
+    <View padding="20px" padding-bottom="0px" width="100%" shadow-radius="2px"
+        linear-gradient="-20deg, #f2a2f2,#121232 80%, rgba(242, 162, 242, 0.7)"
+        background-color="#fefefe"
+        opacity="0.9"
+        overflow="hidden"
+        shadow-color="rgba(0,0,0,0.2)" border-radius="3px">
+        <View width="100%" id="bars">
+            <View width="20%" direction="bottom-to-top" height="200px">
+                <View padding="5px" margin="3px" margin-left="4" height="140px" id="barbar" background-color="#51C6ED"
+                    linear-gradient="#31a6ED,#51C6ED"
+                    shadow-radius="1px"
+                    >
+                </View>
+            </View>
+            <View width="20%" direction="bottom-to-top" height="200px">
+                <View padding="5px" margin="3px" margin-left="4" height="120px" id="barbar" background-color="#51C6ED"
+                    linear-gradient="#31a6ED,#51C6ED"
+                    shadow-radius="1px"
+                    >
+                </View>
+            </View>
+            <View width="20%" direction="bottom-to-top" height="200px">
+                <View padding="5px" margin="3px" margin-left="4" height="180px" id="barbar" background-color="#51C6ED"
+                    linear-gradient="#31a6ED,#51C6ED"
+                    shadow-radius="1px"
+                    >
+                </View>
+            </View>
+        </View>
+        <View width="100%">
+            <Label width="100%" color="#ffffff" opacity="0.9" height="30px" align="center" id="text" text="Simple statistics"></Label>
+        </View>
+    </View>
+</View>
+
+
+                    <View width="100%" >
+                        
+
+                        <View margin="10px" margin-top="0px" margin-left="0px" margin-right="0px">
+                            <View width="20%" height="20%" margin="1px" background-color="#b185B8"
+                                border-radius="50%"
+                                overflow="hidden"
+                                >
+                                <Image src="/static/ilves.png" opacity="0.2" width="100%" height="100%"/>
+                                <View width="100%" height="50hp" linear-gradient="rgba(18, 18, 50, 0.4), rgba(242, 162, 242, 1)" left="0" top="50hp">
+                                </View>
+                            </View>
+                            <View width="20%" height="20%" margin="1px" background-color="#b185B8"
+                                border-radius="0%"
+                                overflow="hidden"
+                                >
+                                <Image src="/static/ilves.png" opacity="0.2" width="100%" height="100%"/>
+                            </View>
+                            <View width="20%" height="20%" margin="1px" background-color="#b185B8"
+                                border-radius="0%"
+                                overflow="hidden"
+                                >
+                                <Image src="/static/ilves.png" opacity="0.2" width="100%" height="100%"/>
+                            </View>
+                            <View width="20%" height="20%" margin="1px" background-color="#b185B8"
+                                border-radius="0%"
+                                overflow="hidden"
+                                >
+                                <Image src="/static/ilves.png" opacity="0.2" width="100%" height="100%"/>
+                            </View>
+                            <View width="20%" height="20%" margin="1px" background-color="#b185B8"
+                                border-radius="0%"
+                                overflow="hidden"
+                                >
+                                <Image src="/static/ilves.png" opacity="0.2" width="100%" height="100%"/>
+                            </View>       
+                            
+                            <View left="0" top="15%"
+                                height="5%"
+                                padding-left="14"
+                                linear-gradient="rgba(0,0,0,0),rgba(0,0,0,0.4)"
+                                padding="3"
+                                ><Label color="#ffffff" margin-left="-2" margin-top="-2" opacity="1" id='text'></Label></View>                
+                        </View>
+                        
+                    </View>
+                    
+                    
+                    <!-- testing material -like design -->
+
+<View background-color="#ee6e73" padding="20px" margin-top="10px" >
+    
+    <View shadow-color="rgba(0,0,0,0.75)" shadow-radius="5px" margin="10px" background-color="white" border-radius="10px" overflow="hidden">
+    <View  background-color="#f3989b"
+        padding="15px"
+        padding-left="20px"
+        padding-right="20px"
+
+        >
+        <Label width="100%" align="center" margin-left="2%" font-size="18px" text="PROJEKTIT" color="#ffffff"></Label>
+    </View>
+    <View  background-color="#ffffff"
+
+        >
+        <View width="20%" height="110px" background-color="#e7e7e7"></View>
+        <View width="80%" height="110px" background-color="#ffffff" >
+            <Label width="100%" margin="20px" align="left"  font-size="12px" text="I am a very simple card. I am good at containing small bits of information." color="#666666"></Label>
+            
+            <View left="0px" top="70px">
+                <View width="100%" margin-top="5px"
+                    height="2px" background-color="#eeeeee"></View>
+                <View width="50%" margin="10px" margin-left="20px">
+                    <Label width="100%" align="left"  font-size="12px" text="Link" color="#ffab40"></Label>
+                </View>
+            </View>
+        </View>
+    </View>
+    </View>
+</View>
+
+                    <!-- switch test -->
+                    <View width="50%" padding="20px" margin="5px" border-radius="5px" background-color="#51C6ED">
+                        <View  width="51px" height="31px" align="right" border-radius="15px" background-color="#11a64D" background-color2="#11a6ED"  >
+                            <View width="31px" height="31px" border-radius="15px" background-color="#ffffff">
+                            </View>
+                        </View>
+                    </View>
+                    
+                    <View path="M18.258,3.266c-0.693,0.405-1.46,0.698-2.277,0.857c-0.653-0.686-1.586-1.115-2.618-1.115c-1.98,0-3.586,1.581-3.586,3.53c0,0.276,0.031,0.545,0.092,0.805C6.888,7.195,4.245,5.79,2.476,3.654C2.167,4.176,1.99,4.781,1.99,5.429c0,1.224,0.633,2.305,1.596,2.938C2.999,8.349,2.445,8.19,1.961,7.925C1.96,7.94,1.96,7.954,1.96,7.97c0,1.71,1.237,3.138,2.877,3.462c-0.301,0.08-0.617,0.123-0.945,0.123c-0.23,0-0.456-0.021-0.674-0.062c0.456,1.402,1.781,2.422,3.35,2.451c-1.228,0.947-2.773,1.512-4.454,1.512c-0.291,0-0.575-0.016-0.855-0.049c1.588,1,3.473,1.586,5.498,1.586c6.598,0,10.205-5.379,10.205-10.045c0-0.153-0.003-0.305-0.01-0.456c0.7-0.499,1.308-1.12,1.789-1.827c-0.644,0.28-1.334,0.469-2.06,0.555C17.422,4.782,17.99,4.091,18.258,3.266"
+                    background-color="gray"
+                    width="23"
+                    height="23"
+                    />
+                    
+                    <View width="40" height="40" background-color="hsla(310, 100%, 49%, 1)">
+                    </View>
+                    
+                    <View padding="10" height="30" width="100%" backgroundColor="blue">
+                        <Label text="abcd" color="white" font-size="18" width="200" height="20"/>
+                    </View>
+                    
+                    <View padding="10" height="30" width="100%">
+                        <Label text="Morjens, can it get longer here..." color="black"/>
+                    </View>
+                    
+                    <View padding="10" height="30" width="100%">
+                        <Label text="Morjens taas"  color="black" font-size="18"/>
+                    </View>
+                    
+                    <View width="40" height="40" background-color="hsla(310, 100%, 49%, 1)">
+                    </View>
+
+<View padding="1" >
+    <Label text="Neque some text porro quisquam est qui dolorem ipsum quia dolor sit amet, consectetur, adipisci velit  porro quisquam est qui dolorem ipsum quia dolor sit amet, koe miksi on vika sana" color="gray" font-size="11"/>
+</View>
+
+<View padding="1" >
+    <Label text="Neque unicode : ǷǷǷ porro quisquam est qui dolorem ipsum quia dolor sit amet, consectetur, adipisci velit  porro quisquam est qui dolorem ipsum quia dolor sit amet, koe miksi on vika sana" color="gray" font-size="13"/>
+</View>
+
+
+
+                    
+                </View>
+            </View>
+            
+            <View width="100%" align="center" padding="6px">
+                <View
+                background-color="#ffffff" width="50px" height="50px"
+                border-radius="50%"
+                />
+            </View>        
+        </View>
+    </View>
+
+
+</View>

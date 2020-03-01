@@ -1,0 +1,2 @@
+duck: video_encoder.c 
+	gcc -std=c99 -I/usr/include/cairo -I/usr/include/glib-2.0 -I/usr/lib/x86_64-linux-gnu/glib-2.0/include -I/usr/include/pixman-1 -I/usr/include/freetype2 -I/usr/include/libpng12 -lz -o../../bin/encoder -I/duktape-2.5.0/src/ -I /usr/include/libxml2/ /duktape-2.5.0/src/duktape.c video_encoder.c UIStructure.c UINativeText.c EVGLinkedList.c UIXMLParser.c UICalculateLayout.c `pkg-config --cflags libxml-2.0` `pkg-config --cflags --libs gtk+-3.0` `pkg-config --cflags --libs gtk+-3.0` -lavutil -lavformat -lavcodec -lz -lavutil -lfreetype -lxml2 -lm  -lcairo

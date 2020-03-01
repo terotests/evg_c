@@ -1,0 +1,55 @@
+    
+    <phones.iphone left="360" top="40" scale="0.5" >
+        <Label padding="10" font-size="16" margin="20">
+Retrieving the content of an element involves traversing the document tree until you find what you are looking for. 
+In this case, we are looking for an element called "keyword" contained within element called "story". The process to 
+find the node we are interested in involves tediously walking the tree. We assume you already have an xmlDocPtr called doc 
+and an xmlNodPtr called cur.
+        </Label>
+        <View paddingLeft="50">
+            <presentation.point><Label>Line 1</Label></presentation.point>
+            <presentation.point><Label>Line 2</Label></presentation.point>
+            <presentation.point><Label>Line 3</Label></presentation.point>
+        </View>
+        <panels.purple >
+            <View width="100%" id="bars" height="160px"   >
+                
+                <stats.barcontainer>
+                    <stats.bar height="30"/>
+                </stats.barcontainer>
+                <stats.barcontainer>
+                    <stats.bar height="35px"/>
+                </stats.barcontainer>
+                
+                <stats.barcontainer align="center">
+                    <stats.bar height="70" linear-gradient="#f1a6ED,#51C6ED"/>
+                    <paths.twitter
+
+                    width="30px"
+                    height="30px"
+                    margin="2px"
+                    background-color="#51C6ED"
+                    />
+                </stats.barcontainer>
+                
+                <stats.barcontainer width="10%">
+                    <stats.bar height="160"  linear-gradient="#31f6ED,#51C6ED"/>
+                </stats.barcontainer>
+                
+                <stats.barcontainer align="center">
+                    <stats.bar height="60"/>
+                    <paths.twitter
+                    
+                    width="30px"
+                    height="30px"
+                    margin="2px"
+                    background-color="#51C6ED"
+                    />
+                </stats.barcontainer>
+                
+            </View>
+            <View width="100%">
+                <Label width="100%" color="#ffffff" opacity="0.9" height="30px" align="center" id="text" text="Another phone, another statistics"></Label>
+            </View>
+        </panels.purple>
+    </phones.iphone>

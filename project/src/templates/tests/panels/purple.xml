@@ -1,0 +1,10 @@
+<View width="100%" padding="10px" linear-gradient="rgba(18, 18, 150, 0.7), rgba(242, 162, 242, 0.7)" background-color="#f2a2f2">
+    <View padding="20px" padding-bottom="0px" width="100%" shadow-radius="2px"
+        linear-gradient="-20deg, #f2a2f2,#121232 80%, rgba(242, 162, 242, 0.7)"
+        background-color="#fefefe"
+        opacity="0.9"
+        overflow="hidden"
+        shadow-color="rgba(0,0,0,0.2)" border-radius="3px">
+        <content></content>
+    </View>
+</View>

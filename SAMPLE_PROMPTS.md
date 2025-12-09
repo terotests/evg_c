@@ -39,7 +39,7 @@ Create a 5-second video of a red square (100x100 pixels) that bounces diagonally
 ## Test Prompt 4: YouTube Intro (Complex)
 
 ```
-Generate a 3-second intro animation for a YouTube channel called "TechTips". 
+Generate a 3-second intro animation for a YouTube channel called "TechTips".
 - Dark purple to blue gradient background
 - The text "TechTips" should slide in from the left side
 - A glowing circle should expand from behind the text
@@ -90,11 +90,11 @@ The AI should respond with a complete JavaScript file like:
 
 ```javascript
 function processLine(time) {
-    if (time > X) return "";
-    
-    // Animation logic here
-    
-    return `<View width="100%" height="100%">
+  if (time > X) return "";
+
+  // Animation logic here
+
+  return `<View width="100%" height="100%">
         <!-- Generated content -->
     </View>`;
 }

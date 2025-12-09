@@ -4,7 +4,7 @@
 
 ![Santa Claus Animation](santa.gif)
 
-*Example: Santa's sleigh flying across a winter night sky - generated entirely from JavaScript code*
+_Example: Santa's sleigh flying across a winter night sky - generated entirely from JavaScript code_
 
 ## Overview
 
@@ -16,11 +16,11 @@ Create a simple bouncing ball animation in just a few lines of JavaScript:
 
 ```javascript
 function processLine(time) {
-    if (time > 3.0) return "";  // Stop after 3 seconds
-    
-    var y = 200 + Math.abs(Math.sin(time * 4)) * 150;  // Bouncing motion
-    
-    return `
+  if (time > 3.0) return ""; // Stop after 3 seconds
+
+  var y = 200 + Math.abs(Math.sin(time * 4)) * 150; // Bouncing motion
+
+  return `
     <View width="100%" height="100%" background-color="#87CEEB">
         <View left="100" top="${y}" width="50" height="50" 
               background-color="#ff0000" border-radius="50%"/>
@@ -29,6 +29,7 @@ function processLine(time) {
 ```
 
 Then generate the video:
+
 ```bash
 ./encoder -j bounce.js -o bounce.mp4 -r 30 -w 800 -h 400
 ```
@@ -208,3 +209,79 @@ evg_c/
 ## License
 
 This is an experimental project. Please check individual component licenses (especially Duktape and FFmpeg) for usage terms.
+
+---
+
+## AI-Assisted Animation Experiment: Solar System Journey
+
+This project includes an experimental animation created through AI-assisted development, demonstrating the capabilities of the EVG system for complex 3D-style animations.
+
+### The Animation
+
+`planets.js` generates a 120-second flythrough of our solar system featuring:
+
+- **3D Projection System**: Full perspective projection with camera look-at targeting
+- **8 Planets**: Neptune, Uranus, Saturn, Jupiter, Mars, Earth, Venus, Mercury - each with accurate relative orbital distances and elliptical orbits
+- **Visual Effects**:
+  - Jupiter's atmospheric bands and Great Red Spot
+  - Earth's orbiting Moon
+  - 1200+ asteroids and space debris
+  - Asteroid belt between Mars and Jupiter
+  - Sun with corona and glow effects
+  - Twinkling star field background
+- **Sci-Fi HUD Overlay**:
+  - Green "Matrix-style" typewriter text effects
+  - Targeting reticles with corner brackets around planets
+  - Real-time distance readouts
+  - Mission timer and velocity indicators
+
+### Technical Highlights
+
+**Smooth Camera System**:
+
+- Catmull-Rom spline interpolation for smooth camera paths
+- Time-based waypoint system for easy path editing
+- Automatic look-at target blending between waypoints
+- Eased transitions using cubic interpolation
+
+**3D Engine Features**:
+
+```javascript
+// Look-at based 3D projection
+function project3DWithLookAt(x, y, z, cameraX, cameraY, cameraZ,
+                              lookAtX, lookAtY, lookAtZ, width, height)
+
+// Elliptical orbit calculation with inclination
+function getOrbitPosition(planet, time)
+
+// Smooth path interpolation
+function catmullRom(p0, p1, p2, p3, t)
+```
+
+**Sci-Fi UI Components**:
+
+```javascript
+// Typewriter text with blinking cursor
+scifiTypewriter(text, x, y, startTime, currentTime, options);
+
+// HUD targeting brackets with pointer lines
+scifiTargetReticle(targetX, targetY, label, options);
+```
+
+### Running the Animation
+
+```bash
+cd project/src/c
+./encoder planets.js planets.mp4
+```
+
+### Development Notes
+
+This animation was developed iteratively with AI assistance, exploring:
+
+- Camera projection mathematics and coordinate systems
+- Spline-based smooth camera movement
+- Efficient rendering of many objects (depth sorting)
+- Creating compelling sci-fi visual aesthetics purely through code
+
+The entire animation is generated procedurally - no pre-rendered assets, just mathematical formulas producing each frame in real-time.

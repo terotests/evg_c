@@ -198,6 +198,8 @@ void popGlobalAlpha() {
 
 int video_buf_width  = 800;
 int video_buf_height = 600;
+int video_framerate  = 25;    /* Default framerate */
+int video_bitrate    = 800000; /* Default bitrate in bits/sec (800 kbps) */
 
 cairo_surface_t *surface = NULL;
 cairo_t *cr = NULL;
@@ -308,41 +310,43 @@ finished:
      */
 }
 
-static void call_duktape_str(int frameNumber) {
+static int call_duktape_str(double timeInSeconds) {
     
     char *resVal;
     char idx;
     int ch;
     char *line = "OK";
-    
-    /* Debug: print frame number being passed for first 5 frames and every 100 */
-    if (frameNumber < 5 || frameNumber % 100 == 0) {
-        printf("DEBUG: Calling processLine with frameNumber=%d\n", frameNumber);
-    }
+    int should_continue = 1;  /* 1 = continue, 0 = stop */
     
     duk_push_global_object(ctx);
     duk_get_prop_string(ctx, -1 /*index*/, "processLine");
-    duk_push_number(ctx, frameNumber);
+    duk_push_number(ctx, timeInSeconds);
     
     if (duk_pcall(ctx, 1 /*nargs*/) != 0) {
         printf("Error calling processLine: %s\n", duk_safe_to_string(ctx, -1));
+        should_continue = 0;  /* Stop on error */
     } else {
-        resVal = duk_safe_to_string(ctx, -1);
-        // Debug: print full XML for first frame, snippet for others
-        if (frameNumber == 0) {
-            printf("DEBUG: Frame 0 FULL XML:\n%s\n", resVal);
-        } else if (frameNumber < 5 || frameNumber % 100 == 0) {
-            printf("DEBUG: Frame %d XML (first 200 chars): %.200s...\n", frameNumber, resVal);
-        }
-        if (resVal && strlen(resVal) > 0) {
-            renderXMLToSurface(resVal);
+        /* Check if result is undefined, null, or false */
+        if (duk_is_undefined(ctx, -1) || duk_is_null(ctx, -1)) {
+            should_continue = 0;
+        } else if (duk_is_boolean(ctx, -1) && !duk_get_boolean(ctx, -1)) {
+            should_continue = 0;
         } else {
-            printf("WARNING: processLine returned empty string for frame %d\n", frameNumber);
+            resVal = duk_safe_to_string(ctx, -1);
+            /* Check for empty string or "false" string */
+            if (!resVal || strlen(resVal) == 0) {
+                should_continue = 0;
+            } else if (strcmp(resVal, "false") == 0 || strcmp(resVal, "undefined") == 0) {
+                should_continue = 0;
+            } else {
+                renderXMLToSurface(resVal);
+            }
         }
     }
     duk_pop(ctx);  /* pop result/error */
     duk_pop(ctx);  /* pop global object */
     
+    return should_continue;
 }
 
 // cairo_pdf_surface_create
@@ -514,11 +518,11 @@ static void video_encode_example(const char *filename)
     }
     
     /* Set codec parameters */
-    codec_ctx->bit_rate = 800000;
+    codec_ctx->bit_rate = video_bitrate;
     codec_ctx->width = video_buf_width;
     codec_ctx->height = video_buf_height;
-    codec_ctx->time_base = (AVRational){1, 25};
-    codec_ctx->framerate = (AVRational){25, 1};
+    codec_ctx->time_base = (AVRational){1, video_framerate};
+    codec_ctx->framerate = (AVRational){video_framerate, 1};
     codec_ctx->gop_size = 10;
     codec_ctx->max_b_frames = 1;
     codec_ctx->pix_fmt = AV_PIX_FMT_YUV420P;
@@ -594,30 +598,42 @@ static void video_encode_example(const char *filename)
     char *imgData = cairo_image_surface_get_data(surface);
     
     int frameNumber = 0;
-    int total_frames = 500;  /* 20 seconds at 25fps */
+    int max_frames = 100000;  /* Safety limit to prevent infinite loops */
     int total_bytes = 0;
     int out_size;
+    double timeInSeconds;
+    double timeStep = 1.0 / (double)video_framerate;  /* Time per frame in seconds */
 
-    printf("Starting to encode %d frames at %dx%d\n", total_frames, codec_ctx->width, codec_ctx->height);
+    printf("\n");
+    printf("=== Video Encoding Started ===\n");
+    printf("Resolution: %dx%d\n", codec_ctx->width, codec_ctx->height);
+    printf("Framerate:  %d fps\n", video_framerate);
+    printf("Bitrate:    %d kbps\n", video_bitrate / 1000);
+    printf("==============================\n");
+    printf("\n");  /* Empty line before progress */
     
-    /* Encode frames */
-    for(i = 0; i < total_frames; i++) {
-        fflush(stdout);
+    /* Encode frames until JavaScript signals to stop */
+    i = 0;
+    while(i < max_frames) {
         
-        /* Update surface with new frame from JavaScript */
-        call_duktape_str(frameNumber++);
+        /* Calculate time in seconds for this frame */
+        timeInSeconds = (double)frameNumber * timeStep;
+        
+        /* Update surface with new frame from JavaScript, passing time in seconds */
+        int should_continue = call_duktape_str(timeInSeconds);
+        frameNumber++;
+        
+        /* Check if we should stop */
+        if (!should_continue) {
+            /* Clear line and print final status */
+            printf("\r                                                        ");
+            printf("\rEncoding stopped at %.2fs\n", timeInSeconds);
+            break;
+        }
         
         /* Get the updated surface data - surface may have been recreated */
         cairo_surface_flush(surface);
         imgData = cairo_image_surface_get_data(surface);
-        
-        /* Debug: check surface status */
-        if (i == 0) {
-            int surf_width = cairo_image_surface_get_width(surface);
-            int surf_height = cairo_image_surface_get_height(surface);
-            int stride = cairo_image_surface_get_stride(surface);
-            printf("Surface: %dx%d, stride=%d, data=%p\n", surf_width, surf_height, stride, imgData);
-        }
         
         if (!imgData) {
             fprintf(stderr, "Error: Could not get surface data for frame %d\n", i);
@@ -654,24 +670,34 @@ static void video_encode_example(const char *filename)
         out_size = encode_frame_to_container(codec_ctx, picture, fmt_ctx, video_stream);
         total_bytes += (out_size > 0) ? out_size : 0;
         
-        if (i % 25 == 0) {
-            printf("encoding frame %3d (size=%5d, total=%d bytes)\n", i, out_size, total_bytes);
-        }
+        /* Progress output - update in place with carriage return (no newline) */
+        printf("\rFrame %4d | Time: %5.2fs | Size: %7.1f KB", 
+               i + 1, timeInSeconds, total_bytes / 1024.0);
+        fflush(stdout);  /* Force output without newline */
+        
+        i++;  /* Increment frame counter */
     }
     
+    /* Move to new line after progress updates */
+    printf("\n");
+    
+    printf("\n=== Encoding Complete ===\n");
+    printf("Total frames:   %d\n", i);
+    printf("Duration:       %.2f seconds\n", (double)i / video_framerate);
+    printf("=========================\n\n");
+    
     /* Flush encoder */
-    printf("Flushing encoder...\n");
+    printf("Finalizing video...");
+    fflush(stdout);
     out_size = encode_frame_to_container(codec_ctx, NULL, fmt_ctx, video_stream);
     while(out_size > 0) {
         total_bytes += out_size;
-        printf("flushing (size=%5d)\n", out_size);
         out_size = encode_frame_to_container(codec_ctx, NULL, fmt_ctx, video_stream);
     }
     
     /* Write file trailer */
     av_write_trailer(fmt_ctx);
-    
-    printf("Total video data written: %d bytes\n", total_bytes);
+    printf(" Done!\n");
     
     /* Cleanup */
     free(picture_buf);
@@ -681,7 +707,17 @@ static void video_encode_example(const char *filename)
         avio_closep(&fmt_ctx->pb);
     avformat_free_context(fmt_ctx);
     
-    printf("Video encoding complete!\n");
+    /* Get actual file size */
+    FILE *f = fopen(filename, "rb");
+    if (f) {
+        fseek(f, 0, SEEK_END);
+        long file_size = ftell(f);
+        fclose(f);
+        printf("Output file:    %s (%.2f KB)\n", filename, file_size / 1024.0);
+    } else {
+        printf("Output file:    %s\n", filename);
+    }
+    
     return;
    
    
@@ -699,6 +735,9 @@ static void video_encode_example(const char *filename)
 
 static void start_video_encoding(const char *jsFile, const char *outputFile) {
     
+    printf("Loading JavaScript: %s\n", jsFile);
+    printf("Output file: %s\n", outputFile);
+    
     /* av_register_all() is deprecated and no longer needed in modern FFmpeg */
     create_cairo();
     
@@ -715,11 +754,6 @@ static void start_video_encoding(const char *jsFile, const char *outputFile) {
         duk_destroy_heap(ctx);
         ctx = NULL;
     }
-    
-    // stream must be built using:
-    // ffmpeg -i video.mp4stream video.mp4
-    
-    printf("Video encoding completed: %s\n", outputFile);
 }
 
 
@@ -1652,7 +1686,7 @@ static void render_ui(cairo_t *cr, UIStructure *ui) {
     
     
     if(ui->opacity->is_set) {
-        printf("Pushing alpha %f \n ", ui->opacity->f_value);
+        // printf("Pushing alpha %f \n ", ui->opacity->f_value);
         pushGlobalAlpha( ui->opacity->f_value );
     }
     
@@ -1847,7 +1881,7 @@ static void render_ui(cairo_t *cr, UIStructure *ui) {
         
         double calc_f = getGlobalAlpha( ui->backgroundColor->a / 255.00 );
         
-        printf( "%f vs %f vs %f \n", 0.5*ui->backgroundColor->a/255.00, ui->backgroundColor->a/255.00, calc_f  );
+        // printf( "%f vs %f vs %f \n", 0.5*ui->backgroundColor->a/255.00, ui->backgroundColor->a/255.00, calc_f  );
         
         cairo_set_source_rgba(cr, ui->backgroundColor->r/255.00,
                               ui->backgroundColor->g/255.00,
@@ -1930,7 +1964,6 @@ static void render_ui(cairo_t *cr, UIStructure *ui) {
                     cairo_clip_preserve (cr);
                 }
                 cairo_fill(cr);
-                printf("--- basic fill \n");
             } else {
                 if(ui->overflow->is_set && (strcmp(ui->overflow->s_value, "hidden")==0)) {
                     cairo_clip_preserve (cr);
@@ -1954,13 +1987,14 @@ static void render_ui(cairo_t *cr, UIStructure *ui) {
         if(old_surface == NULL) {
             png_surface = cairo_image_surface_create_from_png(img_name);
             
-            /* Debug: Check if image loaded successfully */
+            /* Check if image loaded successfully - only warn on first failure */
             cairo_status_t status = cairo_surface_status(png_surface);
             if (status != CAIRO_STATUS_SUCCESS) {
-                printf("ERROR: Failed to load image '%s': %s\n", 
-                       img_name, cairo_status_to_string(status));
-            } else {
-                printf("DEBUG: Loaded image '%s' successfully\n", img_name);
+                static int image_error_shown = 0;
+                if (!image_error_shown) {
+                    fprintf(stderr, "Warning: Some images failed to load (e.g., '%s')\n", img_name);
+                    image_error_shown = 1;
+                }
             }
             
             LinkedListNode *saveItem = ListNode_Create(img_name, png_surface);
@@ -2025,7 +2059,7 @@ static void render_ui(cairo_t *cr, UIStructure *ui) {
     cairo_restore(cr);
     
     if(ui->opacity->is_set) {
-        printf("Popping alpha %f \n ", ui->opacity->f_value);
+        // printf("Popping alpha %f \n ", ui->opacity->f_value);
         popGlobalAlpha();
     }
     
@@ -2050,19 +2084,17 @@ static void draw_ui_to_surface( UIStructure *node_tree) {
     
     cairo_surface_flush(surface);
     
-    /* Debug: save specific frames as PNG to verify rendering */
+    /* Debug: save specific frames as PNG to verify rendering (disabled)
     static int frame_count = 0;
     if (frame_count == 0) {
         cairo_surface_write_to_png(surface, "debug_frame_000.png");
-        printf("DEBUG: Saved frame 0 to debug_frame_000.png\n");
     } else if (frame_count == 100) {
         cairo_surface_write_to_png(surface, "debug_frame_100.png");
-        printf("DEBUG: Saved frame 100 to debug_frame_100.png\n");
     } else if (frame_count == 250) {
         cairo_surface_write_to_png(surface, "debug_frame_250.png");
-        printf("DEBUG: Saved frame 250 to debug_frame_250.png\n");
     }
     frame_count++;
+    */
     
 }
 
@@ -2146,10 +2178,6 @@ void renderXMLToSurface(char *xmlStr) {
         xmlFreeDoc(document);
         render_count++;
         return;
-    }
-    
-    if (render_count < 3) {
-        printf("DEBUG: Render %d - Root element: <%s>\n", render_count, root->name);
     }
     
     //clock_t start_time = clock();
@@ -2283,32 +2311,65 @@ static char *read_file_contents( char *fileName) {
 int main(int argc, char **argv)
 {
     int option = 0;
-    int area = -1, perimeter = -1, breadth = -1, length =-1;
     
     char *inputFile = NULL;
     char *outputFile = NULL;
     char *jsFile = NULL;
+    int framerate = 25;    /* Default framerate */
+    int width = 800;       /* Default width */
+    int height = 600;      /* Default height */
+    int bitrate = 800;     /* Default bitrate in kbps */
     
     //Specifying the expected options
-    //The two options l and b expect numbers as argument
-    while ((option = getopt(argc, argv,"i:o:j:")) != -1) {
+    while ((option = getopt(argc, argv,"i:o:j:r:w:h:b:")) != -1) {
         switch (option) {
             case 'o' :
-                printf("Output file: %s\n", optarg);
                 outputFile = optarg;
                 break;
             case 'i' :
-                printf("Input XML file: %s\n", optarg);
                 inputFile = optarg;
                 break;
             case 'j' :
-                printf("JavaScript file: %s\n", optarg);
                 jsFile = optarg;
+                break;
+            case 'r' :
+                framerate = atoi(optarg);
+                if (framerate < 1 || framerate > 120) {
+                    fprintf(stderr, "Warning: Invalid framerate %d, using default 25\n", framerate);
+                    framerate = 25;
+                }
+                break;
+            case 'w' :
+                width = atoi(optarg);
+                if (width < 16 || width > 7680) {
+                    fprintf(stderr, "Warning: Invalid width %d, using default 800\n", width);
+                    width = 800;
+                }
+                break;
+            case 'h' :
+                height = atoi(optarg);
+                if (height < 16 || height > 4320) {
+                    fprintf(stderr, "Warning: Invalid height %d, using default 600\n", height);
+                    height = 600;
+                }
+                break;
+            case 'b' :
+                bitrate = atoi(optarg);
+                if (bitrate < 100 || bitrate > 50000) {
+                    fprintf(stderr, "Warning: Invalid bitrate %d kbps, using default 800\n", bitrate);
+                    bitrate = 800;
+                }
                 break;
             default:
                 exit(EXIT_FAILURE);
         }
     }
+    
+    /* Set the global video parameters */
+    video_framerate = framerate;
+    video_buf_width = width;
+    video_buf_height = height;
+    video_bitrate = bitrate * 1000;  /* Convert kbps to bps */
     
     if(jsFile && outputFile) {
         // Video encoding mode: use JavaScript file to generate frames
@@ -2320,13 +2381,21 @@ int main(int argc, char **argv)
     } else {
         printf("Usage:\n");
         printf("  Video encoding (JS to video):\n");
-        printf("    %s -j <javascript_file> -o <output_video>\n", argv[0]);
+        printf("    %s -j <js_file> -o <output> [options]\n", argv[0]);
         printf("  XML to PDF:\n");
         printf("    %s -i <input_xml> -o <output_pdf>\n", argv[0]);
         printf("\nOptions:\n");
-        printf("  -j  JavaScript file for video frame generation\n");
-        printf("  -i  Input XML file\n");
-        printf("  -o  Output file (video or PDF)\n");
+        printf("  -j <file>    JavaScript file for video frame generation\n");
+        printf("  -o <file>    Output file (video or PDF)\n");
+        printf("  -i <file>    Input XML file (for PDF mode)\n");
+        printf("  -r <fps>     Framerate (default: 25, range: 1-120)\n");
+        printf("  -w <pixels>  Video width (default: 800, range: 16-7680)\n");
+        printf("  -h <pixels>  Video height (default: 600, range: 16-4320)\n");
+        printf("  -b <kbps>    Bitrate in kbps (default: 800, range: 100-50000)\n");
+        printf("\nExamples:\n");
+        printf("  %s -j anim.js -o video.mp4\n", argv[0]);
+        printf("  %s -j anim.js -o video.mp4 -w 1920 -h 1080 -r 30 -b 2000\n", argv[0]);
+        printf("\nNote: processLine(time) receives time in seconds (0.0, 0.04, 0.08, ...)\n");
     }
     
     return 0;

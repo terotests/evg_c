@@ -57,8 +57,16 @@ function overlay() {
 }
 
 // Should return the view XML ...
-function processLine(line) {
-  var a = Math.sin((line + 50) * 0.03);
+// time: time in seconds (0.0, 0.04, 0.08, ... for 25fps)
+function processLine(time) {
+  // Stop after 2.5 seconds
+  if (time > 2.5) {
+    return "";
+  }
+
+  // Scale time for animation (multiply by ~24 to get similar speed as before with frame numbers)
+  var animTime = time * 24;
+  var a = Math.sin((animTime + 50) * 0.03);
 
   // Magenta : rgb(255,0,255)
   // CYAN:     rgb(0,255,255)
@@ -68,19 +76,19 @@ function processLine(line) {
 
   var str = '<View width="100%" height="100hp" background-color="#ffffcc">';
 
-  str += createPhone(line, line, imageStrip(), 15 + a * 10);
+  str += createPhone(animTime, animTime, imageStrip(), 15 + a * 10);
 
   for (var i = 0; i < 10; i++) {
-    str += createBox(line, i * 20, i * 20, i / 10, 0.1, 0.12);
+    str += createBox(animTime, i * 20, i * 20, i / 10, 0.1, 0.12);
   }
 
   var n = 30;
   for (var i = 0; i < n; i++) {
     var direction = (i / n) * 2 * Math.PI;
-    var pos_x = 150 + Math.cos(direction) * line;
-    var pos_y = 150 + Math.sin(direction) * line;
+    var pos_x = 150 + Math.cos(direction) * animTime;
+    var pos_y = 150 + Math.sin(direction) * animTime;
     var width = 30;
-    var intensity = 1 - line / 60;
+    var intensity = 1 - time / 2.5; // Fade over 2.5 seconds
     str += createParticle(pos_x, pos_y, width, width, intensity);
   }
 

@@ -98,13 +98,27 @@ char* concat(char *s1, char *s2)
 static void push_file_as_string(duk_context *ctx, const char *filename) {
     FILE *f;
     size_t len;
-    char buf[16384];
+    char *buf;
 
     f = fopen(filename, "rb");
     if (f) {
-        len = fread((void *) buf, 1, sizeof(buf), f);
-        fclose(f);
-        duk_push_lstring(ctx, (const char *) buf, (duk_size_t) len);
+        // Get file size
+        fseek(f, 0, SEEK_END);
+        len = ftell(f);
+        fseek(f, 0, SEEK_SET);
+        
+        // Allocate buffer for entire file
+        buf = (char *)malloc(len + 1);
+        if (buf) {
+            fread((void *) buf, 1, len, f);
+            buf[len] = '\0';
+            fclose(f);
+            duk_push_lstring(ctx, (const char *) buf, (duk_size_t) len);
+            free(buf);
+        } else {
+            fclose(f);
+            duk_push_undefined(ctx);
+        }
     } else {
         duk_push_undefined(ctx);
     }
@@ -328,17 +342,30 @@ static int call_duktape_str(double timeInSeconds) {
     } else {
         /* Check if result is undefined, null, or false */
         if (duk_is_undefined(ctx, -1) || duk_is_null(ctx, -1)) {
+            printf("DEBUG: processLine returned undefined/null at time %.2f\n", timeInSeconds);
             should_continue = 0;
         } else if (duk_is_boolean(ctx, -1) && !duk_get_boolean(ctx, -1)) {
+            printf("DEBUG: processLine returned false at time %.2f\n", timeInSeconds);
             should_continue = 0;
         } else {
             resVal = duk_safe_to_string(ctx, -1);
             /* Check for empty string or "false" string */
             if (!resVal || strlen(resVal) == 0) {
+                printf("DEBUG: processLine returned empty string at time %.2f\n", timeInSeconds);
                 should_continue = 0;
             } else if (strcmp(resVal, "false") == 0 || strcmp(resVal, "undefined") == 0) {
+                printf("DEBUG: processLine returned '%s' at time %.2f\n", resVal, timeInSeconds);
                 should_continue = 0;
             } else {
+                /* Debug: Print first frame's XML to file */
+                if (timeInSeconds < 0.01) {
+                    FILE *debugFile = fopen("frame_debug.xml", "w");
+                    if (debugFile) {
+                        fprintf(debugFile, "%s\n", resVal);
+                        fclose(debugFile);
+                        printf("DEBUG: Wrote first frame XML to frame_debug.xml (length: %zu)\n", strlen(resVal));
+                    }
+                }
                 renderXMLToSurface(resVal);
             }
         }

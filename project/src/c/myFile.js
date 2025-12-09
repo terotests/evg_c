@@ -9,14 +9,16 @@ function imageStrip() {
   return '                    <View width="100%" >\n                        \n                        \n                        <View margin="10px" margin-top="0px" margin-left="0px" margin-right="0px">\n                            <View width="20%" height="20%" margin="1px" background-color="#b185B8"\n                                border-radius="0%"\n                                overflow="hidden"\n                                >\n                                <Image src="/static/ilves.png" opacity="0.2" width="100%" height="100%"/>\n                            </View>\n                            <View width="20%" height="20%" margin="1px" background-color="#b185B8"\n                                border-radius="0%"\n                                overflow="hidden"\n                                >\n                                <Image src="/static/ilves.png" opacity="0.2" width="100%" height="100%"/>\n                            </View>\n                            <View width="20%" height="20%" margin="1px" background-color="#b185B8"\n                                border-radius="0%"\n                                overflow="hidden"\n                                >\n                                <Image src="/static/ilves.png" opacity="0.2" width="100%" height="100%"/>\n                            </View>\n                            <View width="20%" height="20%" margin="1px" background-color="#b185B8"\n                                border-radius="0%"\n                                overflow="hidden"\n                                >\n                                <Image src="/static/ilves.png" opacity="0.2" width="100%" height="100%"/>\n                            </View>\n                            <View width="20%" height="20%" margin="1px" background-color="#b185B8"\n                                border-radius="0%"\n                                overflow="hidden"\n                                >\n                                <Image src="/static/ilves.png" opacity="0.2" width="100%" height="100%"/>\n                            </View>       \n                            \n                            <View left="0" top="15%"\n                                height="5%"\n                                padding-left="14"\n                                linear-gradient="rgba(0,0,0,0),rgba(0,0,0,0.4)"\n                                padding="3"\n                                ><Label color="#ffffff" margin-left="-2" margin-top="-2" opacity="1" id=\'text\'></Label></View>                \n                        </View>\n                        \n                        \n                    </View>';
 }
 
-function createPhone(x, y, content) {
+function createPhone(x, y, content, rotation) {
   content = content ? content : "";
   return (
-    '<View width="395" rotate="20" left="' +
+    '<View width="395" rotate="' +
+    rotation +
+    '" left="' +
     x +
     '" top="' +
     y +
-    '">\n    <View width="395" shadow-radius="10px" background-color="#222222" padding="10" border-radius="20px"\n        >\n\n' +
+    '">\n    <View width="395" shadow-radius="10px" background-color="#363156" rotate="30" padding="10" border-radius="20px"\n        >\n\n' +
     '<View width="100%" align="center" padding="6px">\n            <View \n                background-color="#ffffff" width="50px" height="10px"\n                border-radius="15px"\n            />\n  ' +
     '      </View> \n        <View width="375" height="667" overflow="hidden" id="screen" background-color="#ffffff">\n            <View id="scroll" left="0" top="0">' +
     content +
@@ -64,9 +66,9 @@ function processLine(line) {
   var op1 = 0.5 + a * 0.5;
   var op2 = 1 - op1;
 
-  var str = '<View width="100%" height="100hp" background-color="blue">';
+  var str = '<View width="100%" height="100hp" background-color="#ffffcc">';
 
-  str += createPhone(line, line, imageStrip());
+  str += createPhone(line, line, imageStrip(), 15 + a * 10);
 
   for (var i = 0; i < 10; i++) {
     str += createBox(line, i * 20, i * 20, i / 10, 0.1, 0.12);

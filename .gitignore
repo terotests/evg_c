@@ -7,7 +7,19 @@ data_folder/
 
 # Image files
 *.jpg
+*.jpeg
 *.png
+
+# Video files
+*.mp4
+
+# Archives
+*.tar.xz
+*.tar.gz
+*.zip
+
+# Duktape folder
+duktape-2.5.0/
 
 # MacOS
 .DS_Store

@@ -13,15 +13,66 @@
 #include <libavcodec/avcodec.h>
 #include <libavutil/avutil.h>
 #include <libavformat/avformat.h>
+#include <libavutil/opt.h>
+
+/* Helper function to encode a frame and write to format context */
+static int encode_frame_to_container(AVCodecContext *enc_ctx, AVFrame *frame, 
+                                      AVFormatContext *fmt_ctx, AVStream *stream) {
+    AVPacket *pkt = av_packet_alloc();
+    int ret;
+    int bytes_written = 0;
+
+    if (!pkt) {
+        fprintf(stderr, "Could not allocate packet\n");
+        return -1;
+    }
+
+    ret = avcodec_send_frame(enc_ctx, frame);
+    if (ret < 0 && ret != AVERROR_EOF && ret != AVERROR(EAGAIN)) {
+        fprintf(stderr, "Error sending frame for encoding: %d\n", ret);
+        av_packet_free(&pkt);
+        return -1;
+    }
+
+    while (ret >= 0) {
+        ret = avcodec_receive_packet(enc_ctx, pkt);
+        if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF) {
+            break;
+        } else if (ret < 0) {
+            fprintf(stderr, "Error during encoding: %d\n", ret);
+            av_packet_free(&pkt);
+            return -1;
+        }
+        
+        /* Rescale packet timestamp */
+        av_packet_rescale_ts(pkt, enc_ctx->time_base, stream->time_base);
+        pkt->stream_index = stream->index;
+        
+        /* Write packet to container */
+        ret = av_interleaved_write_frame(fmt_ctx, pkt);
+        if (ret < 0) {
+            fprintf(stderr, "Error writing packet: %d\n", ret);
+            av_packet_free(&pkt);
+            return -1;
+        }
+        bytes_written += pkt->size;
+        av_packet_unref(pkt);
+    }
+
+    av_packet_free(&pkt);
+    return bytes_written;
+}
 
 #include "EVGLinkedList.h"
 #include "UIStructure.h"
 #include "UINativeText.h"
+#include "UIXMLParser.h"
+#include "UICalculateLayout.h"
 
 // 
 #include <libxml/parser.h>
 
-#include <duktape.h>
+#include "duktape.h"
 
 // http://www.html5rocks.com/en/tutorials/canvas/texteffects/
 
@@ -42,10 +93,7 @@ char* concat(char *s1, char *s2)
   return result;
 }
 
-char* strdup(char *s1)
-{
-  return concat(s1, "");
-}
+/* strdup is provided by _GNU_SOURCE, custom implementation removed */
 
 static void push_file_as_string(duk_context *ctx, const char *filename) {
     FILE *f;
@@ -239,14 +287,14 @@ static void update_cairo_surface(char *txt) {
 }
 
 duk_context *ctx = NULL;
-static void init_duktape() {
+static void init_duktape(const char *jsFile) {
     ctx = duk_create_heap_default();
     if (!ctx) {
         printf("Failed to create a Duktape heap.\n");
         exit(1);
     }
     
-  push_file_as_string(ctx, "../js/myTest.js");
+  push_file_as_string(ctx, jsFile);
   if (duk_peval(ctx) != 0) {
     printf("Error: %s\n", duk_safe_to_string(ctx, -1));
     // goto finished;
@@ -267,19 +315,33 @@ static void call_duktape_str(int frameNumber) {
     int ch;
     char *line = "OK";
     
+    /* Debug: print frame number being passed for first 5 frames and every 100 */
+    if (frameNumber < 5 || frameNumber % 100 == 0) {
+        printf("DEBUG: Calling processLine with frameNumber=%d\n", frameNumber);
+    }
+    
     duk_push_global_object(ctx);
     duk_get_prop_string(ctx, -1 /*index*/, "processLine");
     duk_push_number(ctx, frameNumber);
     
     if (duk_pcall(ctx, 1 /*nargs*/) != 0) {
-        printf("Error: %s\n", duk_safe_to_string(ctx, -1));
+        printf("Error calling processLine: %s\n", duk_safe_to_string(ctx, -1));
     } else {
         resVal = duk_safe_to_string(ctx, -1);
-        // test_xml_str
-        /// printf("%s\n", resVal);
-        renderXMLToSurface(resVal);
+        // Debug: print full XML for first frame, snippet for others
+        if (frameNumber == 0) {
+            printf("DEBUG: Frame 0 FULL XML:\n%s\n", resVal);
+        } else if (frameNumber < 5 || frameNumber % 100 == 0) {
+            printf("DEBUG: Frame %d XML (first 200 chars): %.200s...\n", frameNumber, resVal);
+        }
+        if (resVal && strlen(resVal) > 0) {
+            renderXMLToSurface(resVal);
+        } else {
+            printf("WARNING: processLine returned empty string for frame %d\n", frameNumber);
+        }
     }
     duk_pop(ctx);  /* pop result/error */
+    duk_pop(ctx);  /* pop global object */
     
 }
 
@@ -345,10 +407,13 @@ static void create_cairo() {
         cairo_surface_destroy(surface);
     }
     
-        surface = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, 352, 288);
+        /* Use the video dimensions for the Cairo surface */
+        surface = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, video_buf_width, video_buf_height);
         cr = cairo_create(surface);
         
-        cairo_set_source_rgb(cr, 255, 255, 255);
+        /* Initialize with white background */
+        cairo_set_source_rgb(cr, 1.0, 1.0, 1.0);
+        cairo_paint(cr);
         
         FT_Face ftFace;
         FT_Error ftError;
@@ -398,178 +463,225 @@ unsigned char clamp(int n){
 
 static void video_encode_example(const char *filename)
 {
-     AVCodec *codec;
-     AVCodecContext *c= NULL;
-
-     int i, out_size, size, x, y, outbuf_size;
-     FILE *f;
-     AVFrame *picture;
-   
-     uint8_t *outbuf, *picture_buf;
-   
-     printf("Video encoding\n");
-   
-     // codec = avcodec_find_encoder(CODEC_ID_MPEG1VIDEO);
-    codec = avcodec_find_encoder(CODEC_ID_MPEG4);
-     if (!codec) {
-	printf("Code note found");
-     } else 
-     {
-	printf("Codec OK");
-     }
-     printf("\n");
-   
-     c= avcodec_alloc_context3(codec);
-     picture= avcodec_alloc_frame();
-     c->bit_rate = 3*400000;
-     
-     // resolution multiple of 2
-     c->width = video_buf_width;
-     c->height = video_buf_height;
-   
-     // fps
-     c->time_base= (AVRational) { 1,30 };
-     c->gop_size = 12;
-     // c->max_b_frames=1;
-     c->pix_fmt = PIX_FMT_YUV420P;
-     if (avcodec_open2(c, codec, NULL) < 0)
-     {
-       printf("Error opening codec");
-       return;
-     }
+    const AVCodec *codec;
+    AVCodecContext *codec_ctx = NULL;
+    AVFormatContext *fmt_ctx = NULL;
+    AVStream *video_stream = NULL;
+    AVFrame *picture = NULL;
     
-    f = fopen(filename, "wb");
-    if (!f) {
-        fprintf(stderr, "could not open %s\n", filename);
-        exit(1);
+    int i, ret, size, x, y;
+    uint8_t *picture_buf;
+    
+    printf("Video encoding to %s\n", filename);
+    
+    /* Allocate output format context - auto-detect from filename */
+    ret = avformat_alloc_output_context2(&fmt_ctx, NULL, NULL, filename);
+    if (ret < 0 || !fmt_ctx) {
+        printf("Could not create output context\n");
+        return;
     }
- 
-    /* alloc image and output buffer */
-    outbuf_size = video_buf_width*video_buf_height;
-    outbuf = malloc(outbuf_size);
-    size = c->width * c->height;
-    picture_buf = malloc((size * 3) / 2); /* size for YUV 420 */
+    printf("Output format: %s\n", fmt_ctx->oformat->name);
     
-    // pointer to buffer for YUV buffer
+    /* Find encoder - use H.264 for MP4, MPEG1 for MPG */
+    if (strcmp(fmt_ctx->oformat->name, "mp4") == 0 || 
+        strcmp(fmt_ctx->oformat->name, "mov") == 0) {
+        codec = avcodec_find_encoder(AV_CODEC_ID_MPEG4);  /* More compatible than H.264 */
+    } else {
+        codec = avcodec_find_encoder(AV_CODEC_ID_MPEG1VIDEO);
+    }
+    
+    if (!codec) {
+        printf("Codec not found\n");
+        avformat_free_context(fmt_ctx);
+        return;
+    }
+    printf("Codec: %s\n", codec->name);
+    
+    /* Create new video stream */
+    video_stream = avformat_new_stream(fmt_ctx, NULL);
+    if (!video_stream) {
+        printf("Could not create video stream\n");
+        avformat_free_context(fmt_ctx);
+        return;
+    }
+    
+    /* Allocate codec context */
+    codec_ctx = avcodec_alloc_context3(codec);
+    if (!codec_ctx) {
+        printf("Could not allocate codec context\n");
+        avformat_free_context(fmt_ctx);
+        return;
+    }
+    
+    /* Set codec parameters */
+    codec_ctx->bit_rate = 800000;
+    codec_ctx->width = video_buf_width;
+    codec_ctx->height = video_buf_height;
+    codec_ctx->time_base = (AVRational){1, 25};
+    codec_ctx->framerate = (AVRational){25, 1};
+    codec_ctx->gop_size = 10;
+    codec_ctx->max_b_frames = 1;
+    codec_ctx->pix_fmt = AV_PIX_FMT_YUV420P;
+    
+    /* Some formats want stream headers to be separate */
+    if (fmt_ctx->oformat->flags & AVFMT_GLOBALHEADER)
+        codec_ctx->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
+    
+    /* Open codec */
+    ret = avcodec_open2(codec_ctx, codec, NULL);
+    if (ret < 0) {
+        printf("Error opening codec: %d\n", ret);
+        avcodec_free_context(&codec_ctx);
+        avformat_free_context(fmt_ctx);
+        return;
+    }
+    
+    /* Copy codec parameters to stream */
+    ret = avcodec_parameters_from_context(video_stream->codecpar, codec_ctx);
+    if (ret < 0) {
+        printf("Could not copy codec parameters\n");
+        avcodec_free_context(&codec_ctx);
+        avformat_free_context(fmt_ctx);
+        return;
+    }
+    video_stream->time_base = codec_ctx->time_base;
+    
+    /* Open output file */
+    if (!(fmt_ctx->oformat->flags & AVFMT_NOFILE)) {
+        ret = avio_open(&fmt_ctx->pb, filename, AVIO_FLAG_WRITE);
+        if (ret < 0) {
+            printf("Could not open output file '%s'\n", filename);
+            avcodec_free_context(&codec_ctx);
+            avformat_free_context(fmt_ctx);
+            return;
+        }
+    }
+    
+    /* Write file header */
+    ret = avformat_write_header(fmt_ctx, NULL);
+    if (ret < 0) {
+        printf("Error writing header: %d\n", ret);
+        avcodec_free_context(&codec_ctx);
+        avformat_free_context(fmt_ctx);
+        return;
+    }
+    
+    /* Allocate frame */
+    picture = av_frame_alloc();
+    if (!picture) {
+        printf("Could not allocate frame\n");
+        avcodec_free_context(&codec_ctx);
+        avformat_free_context(fmt_ctx);
+        return;
+    }
+    
+    picture->format = codec_ctx->pix_fmt;
+    picture->width = codec_ctx->width;
+    picture->height = codec_ctx->height;
+    
+    /* Allocate frame buffer */
+    size = codec_ctx->width * codec_ctx->height;
+    picture_buf = malloc((size * 3) / 2);
+    
     picture->data[0] = picture_buf;
     picture->data[1] = picture->data[0] + size;
     picture->data[2] = picture->data[1] + size / 4;
-    
-    // horizontal size of the buffers....
-    picture->linesize[0] = c->width;
-    picture->linesize[1] = c->width / 2;
-    picture->linesize[2] = c->width / 2;
+    picture->linesize[0] = codec_ctx->width;
+    picture->linesize[1] = codec_ctx->width / 2;
+    picture->linesize[2] = codec_ctx->width / 2;
     
     cairo_surface_flush(surface);
     char *imgData = cairo_image_surface_get_data(surface);
     
-    int times = 0;
     int frameNumber = 0;
+    int total_frames = 500;  /* 20 seconds at 25fps */
+    int total_bytes = 0;
+    int out_size;
 
+    printf("Starting to encode %d frames at %dx%d\n", total_frames, codec_ctx->width, codec_ctx->height);
     
-    for( times = 0; times < 20; times++) {
-        
-    
-    /* encode 1 second of video */
-    for(i=(times*25);i<25+(times*25);i++) {
+    /* Encode frames */
+    for(i = 0; i < total_frames; i++) {
         fflush(stdout);
-        /* prepare a dummy image */
-        /* Y */
         
-        
-        // will update the surface completely to new outlook
+        /* Update surface with new frame from JavaScript */
         call_duktape_str(frameNumber++);
         
+        /* Get the updated surface data - surface may have been recreated */
         cairo_surface_flush(surface);
-        
         imgData = cairo_image_surface_get_data(surface);
         
+        /* Debug: check surface status */
+        if (i == 0) {
+            int surf_width = cairo_image_surface_get_width(surface);
+            int surf_height = cairo_image_surface_get_height(surface);
+            int stride = cairo_image_surface_get_stride(surface);
+            printf("Surface: %dx%d, stride=%d, data=%p\n", surf_width, surf_height, stride, imgData);
+        }
         
-        /*
-         destination[i] = ( ( 66*r + 129*g + 25*b ) >> 8 ) + 16;
-         if (!((i / width) % 2) && !(i % 2)) {
-         destination[upos++] = ( ( -38*r + -74*g + 112*b ) >> 8) + 128;
-         destination[vpos++] = ( ( 112*r + -94*g + -18*b ) >> 8) + 128;
-        */
-        for(y=0;y<c->height;y++) {
-            for(x=0;x<c->width;x++) {
+        if (!imgData) {
+            fprintf(stderr, "Error: Could not get surface data for frame %d\n", i);
+            continue;
+        }
+        
+        /* Get the actual stride from Cairo */
+        int stride = cairo_image_surface_get_stride(surface);
+        
+        /* Convert BGRA to YUV420P */
+        for(y = 0; y < codec_ctx->height; y++) {
+            for(x = 0; x < codec_ctx->width; x++) {
+                /* Use stride instead of width*4 for correct row access */
+                uint8_t b = imgData[y * stride + x*4 + 0];
+                uint8_t g = imgData[y * stride + x*4 + 1];
+                uint8_t r = imgData[y * stride + x*4 + 2];
                 
-                /*
-                uint8_t A = imgData[4*y*c->width + x*4   ];
-                uint8_t r = imgData[4*y*c->width + x*4 + 1];
-                uint8_t g = imgData[4*y*c->width + x*4 + 2];
-                uint8_t b = imgData[4*y*c->width + x*4 + 3];
-                */
-                uint8_t A = imgData[4*y*c->width + x*4   ];
-                uint8_t r = imgData[4*y*c->width + x*4 + 2];
-                uint8_t g = imgData[4*y*c->width + x*4 + 1];
-                uint8_t b = imgData[4*y*c->width + x*4 + 0];
-                
-                uint8_t YY  =  ( ( 66*r + 129*g + 25*b ) >> 8 ) + 16;
-                uint8_t VV  =  ( ( 112*r + -94*g + -18*b ) >> 8) + 128;
-                uint8_t UU  =  ( ( -38*r + -74*g + 112*b ) >> 8) + 128;
-                
-                int yy = y / 2;
-                int xx = x / 2;
-                
-                // picture->data[0][y * picture->linesize[0] + x] = 30;
-                
-                // WAS;
+                uint8_t YY = ((66*r + 129*g + 25*b) >> 8) + 16;
                 picture->data[0][y * picture->linesize[0] + x] = YY;
                 
-                
-                //if((x&1 == 0) && (y&1 == 0)) {
+                if ((y % 2 == 0) && (x % 2 == 0)) {
+                    int yy = y / 2;
+                    int xx = x / 2;
+                    uint8_t UU = ((-38*r + -74*g + 112*b) >> 8) + 128;
+                    uint8_t VV = ((112*r + -94*g + -18*b) >> 8) + 128;
                     picture->data[1][yy * picture->linesize[1] + xx] = UU;
                     picture->data[2][yy * picture->linesize[2] + xx] = VV;
-                //}
-                
+                }
             }
         }
         
-        /*
-        for(y=0;y<c->height/2;y++) {
-            for(x=0;x<c->width/2;x++) {
-                picture->data[1][y * picture->linesize[1] + x] = 128 + y + i * 2;
-                picture->data[2][y * picture->linesize[2] + x] = 64 + x + i * 5;
-            }
+        /* Encode the frame */
+        picture->pts = i;
+        out_size = encode_frame_to_container(codec_ctx, picture, fmt_ctx, video_stream);
+        total_bytes += (out_size > 0) ? out_size : 0;
+        
+        if (i % 25 == 0) {
+            printf("encoding frame %3d (size=%5d, total=%d bytes)\n", i, out_size, total_bytes);
         }
-        */
-        
-        
-        /* encode the image */
-        out_size = avcodec_encode_video(c, outbuf, outbuf_size, picture);
-        printf("encoding frame %3d (size=%5d)\n", i, out_size);
-        fwrite(outbuf, 1, out_size, f);
     }
     
-    /* get the delayed frames */
-    for(; out_size; i++) {
-        fflush(stdout);
-        
-        out_size = avcodec_encode_video(c, outbuf, outbuf_size, NULL);
-        printf("write frame %3d (size=%5d)\n", i, out_size);
-        fwrite(outbuf, 1, out_size, f);
-    }
-        
+    /* Flush encoder */
+    printf("Flushing encoder...\n");
+    out_size = encode_frame_to_container(codec_ctx, NULL, fmt_ctx, video_stream);
+    while(out_size > 0) {
+        total_bytes += out_size;
+        printf("flushing (size=%5d)\n", out_size);
+        out_size = encode_frame_to_container(codec_ctx, NULL, fmt_ctx, video_stream);
     }
     
-    /* add sequence end code to have a real mpeg file */
-    outbuf[0] = 0x00;
-    outbuf[1] = 0x00;
-    outbuf[2] = 0x01;
-    outbuf[3] = 0xb7;
-    fwrite(outbuf, 1, 4, f);
-    fclose(f);
+    /* Write file trailer */
+    av_write_trailer(fmt_ctx);
+    
+    printf("Total video data written: %d bytes\n", total_bytes);
+    
+    /* Cleanup */
     free(picture_buf);
-    free(outbuf);
+    av_frame_free(&picture);
+    avcodec_free_context(&codec_ctx);
+    if (!(fmt_ctx->oformat->flags & AVFMT_NOFILE))
+        avio_closep(&fmt_ctx->pb);
+    avformat_free_context(fmt_ctx);
     
-    avcodec_close(c);
-    av_free(c);
-    av_free(picture);
-    printf("\n");
-    
-     
-   
+    printf("Video encoding complete!\n");
     return;
    
    
@@ -585,22 +697,29 @@ static void video_encode_example(const char *filename)
 */     
 }
 
-static void start_video_encoding() {
+static void start_video_encoding(const char *jsFile, const char *outputFile) {
     
-    av_register_all();
+    /* av_register_all() is deprecated and no longer needed in modern FFmpeg */
     create_cairo();
     
-    video_encode_example("/var/www/static/cpp/video.mp4stream");
+    init_duktape(jsFile);
+    
+    video_encode_example(outputFile);
     
     if(cr) {
         cairo_destroy(cr);
         cairo_surface_destroy(surface);
     }
     
+    if(ctx) {
+        duk_destroy_heap(ctx);
+        ctx = NULL;
+    }
+    
     // stream must be built using:
     // ffmpeg -i video.mp4stream video.mp4
     
-    printf("OK\n");
+    printf("Video encoding completed: %s\n", outputFile);
 }
 
 
@@ -1126,7 +1245,7 @@ static void render_svg_path( cairo_t *cr, UIStructure *ui ) {
     
     char   value_str[64];
     
-    char   cmd = "L";
+    char   cmd = 'L';
     
     int    max_cnt = 1000; // path max length... for testing...
     
@@ -1517,6 +1636,16 @@ static void render_ui(cairo_t *cr, UIStructure *ui) {
     // position the surface
     cairo_translate(cr, ui->calculated.x, ui->calculated.y);
 
+    /* Apply rotation if set - rotate around the center of the element */
+    if(ui->rotate->is_set) {
+        /* Move to center, rotate, move back */
+        double cx = ui->calculated.render_width / 2.0;
+        double cy = ui->calculated.render_height / 2.0;
+        cairo_translate(cr, cx, cy);
+        cairo_rotate(cr, ui->rotate->f_value * (M_PI / 180.0));  /* Convert degrees to radians */
+        cairo_translate(cr, -cx, -cy);
+    }
+
     if(ui->scale->is_set) {
       cairo_scale(cr, ui->calculated.scale, ui->scale->f_value);
     }
@@ -1824,6 +1953,16 @@ static void render_ui(cairo_t *cr, UIStructure *ui) {
         
         if(old_surface == NULL) {
             png_surface = cairo_image_surface_create_from_png(img_name);
+            
+            /* Debug: Check if image loaded successfully */
+            cairo_status_t status = cairo_surface_status(png_surface);
+            if (status != CAIRO_STATUS_SUCCESS) {
+                printf("ERROR: Failed to load image '%s': %s\n", 
+                       img_name, cairo_status_to_string(status));
+            } else {
+                printf("DEBUG: Loaded image '%s' successfully\n", img_name);
+            }
+            
             LinkedListNode *saveItem = ListNode_Create(img_name, png_surface);
             List_push( imageList, saveItem );
         } else {
@@ -1831,13 +1970,14 @@ static void render_ui(cairo_t *cr, UIStructure *ui) {
             png_surface = (cairo_surface_t*)old_surface->data;
         }
         // cairo_surface_t *png_surface = cairo_image_surface_create_from_png(img_name);
-        if(png_surface != NULL) {
+        if(png_surface != NULL && cairo_surface_status(png_surface) == CAIRO_STATUS_SUCCESS) {
             int w = cairo_image_surface_get_width(png_surface);
             int h = cairo_image_surface_get_height(png_surface);
             
             // printf("Image %s %i x %i \n", img_name, w,h);
             
-            double scale_f = ui->calculated.render_width/w;
+            if (w > 0 && h > 0) {
+                double scale_f = ui->calculated.render_width/w;
             
             
             cairo_scale (cr, scale_f, scale_f);
@@ -1859,6 +1999,7 @@ static void render_ui(cairo_t *cr, UIStructure *ui) {
                 cairo_paint (cr);
             }
             
+            } /* end if (w > 0 && h > 0) */
         }
     }
     
@@ -1901,15 +2042,27 @@ static void draw_ui_to_surface( UIStructure *node_tree) {
     surface = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, video_buf_width, video_buf_height);
     cr = cairo_create(surface);
     
-    
-    
+    /* Clear the surface with white background */
+    cairo_set_source_rgb(cr, 1.0, 1.0, 1.0);
+    cairo_paint(cr);
     
     render_ui( cr, node_tree );
     
-    
-
-    // cairo_show_page(cr);
     cairo_surface_flush(surface);
+    
+    /* Debug: save specific frames as PNG to verify rendering */
+    static int frame_count = 0;
+    if (frame_count == 0) {
+        cairo_surface_write_to_png(surface, "debug_frame_000.png");
+        printf("DEBUG: Saved frame 0 to debug_frame_000.png\n");
+    } else if (frame_count == 100) {
+        cairo_surface_write_to_png(surface, "debug_frame_100.png");
+        printf("DEBUG: Saved frame 100 to debug_frame_100.png\n");
+    } else if (frame_count == 250) {
+        cairo_surface_write_to_png(surface, "debug_frame_250.png");
+        printf("DEBUG: Saved frame 250 to debug_frame_250.png\n");
+    }
+    frame_count++;
     
 }
 
@@ -1979,10 +2132,24 @@ void renderXMLToSurface(char *xmlStr) {
     xmlNode        *root, *first_child, *node;
     xmlChar        *value;
     
+    static int render_count = 0;
+    
     document = xmlParseDoc(xmlStr);
+    if (!document) {
+        fprintf(stderr, "Failed to parse XML for render %d\n", render_count);
+        render_count++;
+        return;
+    }
     root = xmlDocGetRootElement(document);
     if(!root) {
+        fprintf(stderr, "No root element in XML for render %d\n", render_count);
+        xmlFreeDoc(document);
+        render_count++;
         return;
+    }
+    
+    if (render_count < 3) {
+        printf("DEBUG: Render %d - Root element: <%s>\n", render_count, root->name);
     }
     
     //clock_t start_time = clock();
@@ -2004,7 +2171,11 @@ void renderXMLToSurface(char *xmlStr) {
     calculateUIStructureLayout( node_tree, container, UIRenderPosition_With(0,0,1) );
     draw_ui_to_surface(node_tree);
 
+    /* Free memory to prevent leaks during video encoding */
+    xmlFreeDoc(document);
+    /* TODO: Add UIStructure_Free(node_tree) and UIStructure_Free(container) if available */
     
+    render_count++;
     return;
 }
 
@@ -2062,10 +2233,10 @@ int adder(duk_context *ctx) {
 
 
 
-// this test creates video using duktape callbacks
+// this test creates video using duktape callbacks (legacy test function)
 static void js_and_video_test() {
-    init_duktape();
-    start_video_encoding();
+    // Now uses command line arguments via start_video_encoding()
+    // start_video_encoding("../js/myTest.js", "/var/www/static/cpp/video.mp4stream");
 }
 
 static char *read_file_contents( char *fileName) {
@@ -2116,37 +2287,49 @@ int main(int argc, char **argv)
     
     char *inputFile = NULL;
     char *outputFile = NULL;
+    char *jsFile = NULL;
     
     //Specifying the expected options
     //The two options l and b expect numbers as argument
-    while ((option = getopt(argc, argv,"i:o:")) != -1) {
+    while ((option = getopt(argc, argv,"i:o:j:")) != -1) {
         switch (option) {
             case 'o' :
-                printf("Should read file %s\n", optarg);
+                printf("Output file: %s\n", optarg);
                 outputFile = optarg;
-                // test_xml( optarg );
-                
                 break;
             case 'i' :
-                    printf("Should read file %s\n", optarg);
-                    inputFile = optarg;
-                    // test_xml( optarg );
-                
+                printf("Input XML file: %s\n", optarg);
+                inputFile = optarg;
+                break;
+            case 'j' :
+                printf("JavaScript file: %s\n", optarg);
+                jsFile = optarg;
                 break;
             default:
                 exit(EXIT_FAILURE);
         }
     }
     
-    if(inputFile && outputFile) {
-        test_xml( inputFile, outputFile);
+    if(jsFile && outputFile) {
+        // Video encoding mode: use JavaScript file to generate frames
+        printf("Starting video encoding...\n");
+        start_video_encoding(jsFile, outputFile);
+    } else if(inputFile && outputFile) {
+        // XML to PDF mode
+        test_xml(inputFile, outputFile);
     } else {
-        printf("Usage : \n");
-        printf(" -i  input file\n");
-        printf(" -o  output file\n");
+        printf("Usage:\n");
+        printf("  Video encoding (JS to video):\n");
+        printf("    %s -j <javascript_file> -o <output_video>\n", argv[0]);
+        printf("  XML to PDF:\n");
+        printf("    %s -i <input_xml> -o <output_pdf>\n", argv[0]);
+        printf("\nOptions:\n");
+        printf("  -j  JavaScript file for video frame generation\n");
+        printf("  -i  Input XML file\n");
+        printf("  -o  Output file (video or PDF)\n");
     }
     
-    return;
+    return 0;
     js_and_video_test();
     
     // create_cairo_pdf();

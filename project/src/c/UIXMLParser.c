@@ -823,7 +823,7 @@ static void parseRadialGradient( UIColorStop *into, char *str) {
             str = strstr(str, ",");
             if(str !=NULL) str++;
         } else {
-            printf("step_cnt==0\n", str);
+            printf("step_cnt==0\n");
             break; // nothing to be found...
         }
     }
@@ -894,7 +894,7 @@ static char* stradd(const char* a, const char* b){
 static UIStructure *read_custom_tag_def(char *filename) {
     
     
-    if(filename == NULL) return;
+    if(filename == NULL) return NULL;
     
     char *baseDir = "./";
     

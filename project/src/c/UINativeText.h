@@ -37,6 +37,9 @@ cairo_font_face_t *findFontFace( char *fontName, char *fontStyle);
 // creating blur for the surface
 void  evg_blur(cairo_surface_t *surface, int radius);
 
+// shadow effect
+void evg_apply_shadow(cairo_t *_context, UIStructure *ui, void (fn)(cairo_t *cr));
+
 UITextDimensions *calculateTextDimensions( UIStructure *ui, double availableWidth );
 
 #endif

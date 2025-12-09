@@ -98,7 +98,7 @@ cairo_font_face_t *findFontFace( char *fontName, char *fontStyle) {
             LinkedListNode *saveItem = ListNode_Create(fontName, new_crFace);
             List_push( __activeFontList, saveItem );
             
-            printf("Found font %s \n", plain_dir);
+            // printf("Found font %s \n", plain_dir);
             
             return new_crFace;
         }
@@ -114,7 +114,7 @@ cairo_font_face_t *findFontFace( char *fontName, char *fontStyle) {
             LinkedListNode *saveItem = ListNode_Create(fontName, new_crFace);
             List_push( __activeFontList, saveItem );
             
-            printf("Found font %s \n", regular_dir);
+            // printf("Found font %s \n", regular_dir);
             
             return new_crFace;
         }
@@ -144,7 +144,7 @@ cairo_font_face_t *findFontFace( char *fontName, char *fontStyle) {
         return (cairo_font_face_t*)cached_font->data;
         
     } else {
-        printf("Was cached %s \n", cached_font->name);
+        // printf("Was cached %s \n", cached_font->name);
         return (cairo_font_face_t*)cached_font->data;
         
     }
@@ -260,7 +260,7 @@ UITextDimensions *calculateTextDimensions( UIStructure *ui, double availableWidt
     
     if(ui->fontSize->is_set) fontSize = ui->fontSize->f_value * ui->calculated.scale;
     
-    printf("TESTING FONT %s\n", ui->fontFamily->s_value);
+    // printf("TESTING FONT %s\n", ui->fontFamily->s_value);
     
     cairo_set_font_size(cr, fontSize);
     
@@ -470,7 +470,7 @@ void  evg_blur( cairo_surface_t *surface, int radius ) {
     }
     */
     
-    printf("BLUR alpha %f \n", __globalAlpha);
+    // printf("BLUR alpha %f \n", __globalAlpha);
     
     radius = radius * 0.57735f + 0.5f;
     // get width, height

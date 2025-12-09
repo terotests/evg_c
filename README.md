@@ -26,7 +26,7 @@ The algorithm works in the following way:
 
 ```bash
 # Video encoding (JavaScript to video)
-./encoder -j <javascript_file> -o <output_video>
+./encoder -j <js_file> -o <output> [options]
 
 # XML to PDF conversion
 ./encoder -i <input_xml> -o <output_pdf>
@@ -34,16 +34,53 @@ The algorithm works in the following way:
 
 ### Options
 
-| Option | Description                                |
-| ------ | ------------------------------------------ |
-| `-j`   | JavaScript file for video frame generation |
-| `-i`   | Input XML file                             |
-| `-o`   | Output file (video or PDF)                 |
+| Option | Description                                       |
+| ------ | ------------------------------------------------- |
+| `-j`   | JavaScript file for video frame generation        |
+| `-o`   | Output file (video or PDF)                        |
+| `-i`   | Input XML file (for PDF mode)                     |
+| `-r`   | Framerate in fps (default: 25, range: 1-120)      |
+| `-w`   | Video width in pixels (default: 800, max: 7680)   |
+| `-h`   | Video height in pixels (default: 600, max: 4320)  |
+| `-b`   | Bitrate in kbps (default: 800, range: 100-50000)  |
 
-### Example
+### Examples
 
 ```bash
+# Generate video with default settings (800x600, 25fps, 800kbps)
 ./encoder -j myFile.js -o output.mp4
+
+# Generate HD video at 30fps
+./encoder -j myFile.js -o output.mp4 -w 1280 -h 720 -r 30
+
+# Generate Full HD video with high quality
+./encoder -j myFile.js -o output.mp4 -w 1920 -h 1080 -r 30 -b 4000
+
+# Generate 4K video at 60fps
+./encoder -j myFile.js -o output.mp4 -w 3840 -h 2160 -r 60 -b 20000
+```
+
+### JavaScript API
+
+The `processLine(time)` function receives time in seconds as a floating-point number:
+
+- At 25fps: `0.0, 0.04, 0.08, 0.12, ...`
+- At 30fps: `0.0, 0.033, 0.067, 0.1, ...`
+- At 60fps: `0.0, 0.0167, 0.033, 0.05, ...`
+
+Return an empty string `""`, `false`, or `undefined` to stop video generation.
+
+```javascript
+function processLine(time) {
+  // Stop after 5 seconds
+  if (time > 5.0) {
+    return "";
+  }
+
+  // Create animation based on time
+  var x = Math.sin(time * 2) * 100;
+  return '<View left="' + x + '" ...></View>';
+}
 ```
 
 ## Technical Components

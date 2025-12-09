@@ -198,6 +198,7 @@ void popGlobalAlpha() {
 
 int video_buf_width  = 800;
 int video_buf_height = 600;
+int video_framerate  = 25;  /* Default framerate */
 
 cairo_surface_t *surface = NULL;
 cairo_t *cr = NULL;
@@ -308,41 +309,62 @@ finished:
      */
 }
 
-static void call_duktape_str(int frameNumber) {
+static int call_duktape_str(double timeInSeconds) {
     
     char *resVal;
     char idx;
     int ch;
     char *line = "OK";
+    int should_continue = 1;  /* 1 = continue, 0 = stop */
     
-    /* Debug: print frame number being passed for first 5 frames and every 100 */
-    if (frameNumber < 5 || frameNumber % 100 == 0) {
-        printf("DEBUG: Calling processLine with frameNumber=%d\n", frameNumber);
+    /* Debug: print time being passed for first 5 frames and every 100th frame */
+    static int call_count = 0;
+    if (call_count < 5 || call_count % 100 == 0) {
+        printf("DEBUG: Calling processLine with time=%.4f seconds\n", timeInSeconds);
     }
+    call_count++;
     
     duk_push_global_object(ctx);
     duk_get_prop_string(ctx, -1 /*index*/, "processLine");
-    duk_push_number(ctx, frameNumber);
+    duk_push_number(ctx, timeInSeconds);
     
     if (duk_pcall(ctx, 1 /*nargs*/) != 0) {
         printf("Error calling processLine: %s\n", duk_safe_to_string(ctx, -1));
+        should_continue = 0;  /* Stop on error */
     } else {
-        resVal = duk_safe_to_string(ctx, -1);
-        // Debug: print full XML for first frame, snippet for others
-        if (frameNumber == 0) {
-            printf("DEBUG: Frame 0 FULL XML:\n%s\n", resVal);
-        } else if (frameNumber < 5 || frameNumber % 100 == 0) {
-            printf("DEBUG: Frame %d XML (first 200 chars): %.200s...\n", frameNumber, resVal);
-        }
-        if (resVal && strlen(resVal) > 0) {
-            renderXMLToSurface(resVal);
+        /* Check if result is undefined, null, or false */
+        if (duk_is_undefined(ctx, -1) || duk_is_null(ctx, -1)) {
+            printf("INFO: processLine returned undefined/null at time %.4f, stopping video generation\n", timeInSeconds);
+            should_continue = 0;
+        } else if (duk_is_boolean(ctx, -1) && !duk_get_boolean(ctx, -1)) {
+            printf("INFO: processLine returned false at time %.4f, stopping video generation\n", timeInSeconds);
+            should_continue = 0;
         } else {
-            printf("WARNING: processLine returned empty string for frame %d\n", frameNumber);
+            resVal = duk_safe_to_string(ctx, -1);
+            // Debug: print full XML for first frame, snippet for others
+            static int render_debug_count = 0;
+            if (render_debug_count == 0) {
+                printf("DEBUG: Time 0 FULL XML:\n%s\n", resVal);
+            } else if (render_debug_count < 5 || render_debug_count % 100 == 0) {
+                printf("DEBUG: Time %.4f XML (first 200 chars): %.200s...\n", timeInSeconds, resVal);
+            }
+            render_debug_count++;
+            /* Check for empty string or "false" string */
+            if (!resVal || strlen(resVal) == 0) {
+                printf("INFO: processLine returned empty string at time %.4f, stopping video generation\n", timeInSeconds);
+                should_continue = 0;
+            } else if (strcmp(resVal, "false") == 0 || strcmp(resVal, "undefined") == 0) {
+                printf("INFO: processLine returned '%s' at time %.4f, stopping video generation\n", resVal, timeInSeconds);
+                should_continue = 0;
+            } else {
+                renderXMLToSurface(resVal);
+            }
         }
     }
     duk_pop(ctx);  /* pop result/error */
     duk_pop(ctx);  /* pop global object */
     
+    return should_continue;
 }
 
 // cairo_pdf_surface_create
@@ -517,8 +539,8 @@ static void video_encode_example(const char *filename)
     codec_ctx->bit_rate = 800000;
     codec_ctx->width = video_buf_width;
     codec_ctx->height = video_buf_height;
-    codec_ctx->time_base = (AVRational){1, 25};
-    codec_ctx->framerate = (AVRational){25, 1};
+    codec_ctx->time_base = (AVRational){1, video_framerate};
+    codec_ctx->framerate = (AVRational){video_framerate, 1};
     codec_ctx->gop_size = 10;
     codec_ctx->max_b_frames = 1;
     codec_ctx->pix_fmt = AV_PIX_FMT_YUV420P;
@@ -594,18 +616,33 @@ static void video_encode_example(const char *filename)
     char *imgData = cairo_image_surface_get_data(surface);
     
     int frameNumber = 0;
-    int total_frames = 500;  /* 20 seconds at 25fps */
+    int max_frames = 100000;  /* Safety limit to prevent infinite loops */
     int total_bytes = 0;
     int out_size;
+    double timeInSeconds;
+    double timeStep = 1.0 / (double)video_framerate;  /* Time per frame in seconds */
 
-    printf("Starting to encode %d frames at %dx%d\n", total_frames, codec_ctx->width, codec_ctx->height);
+    printf("Starting video encoding at %dx%d, %d fps (will stop when JS returns empty/false/undefined)\n", 
+           codec_ctx->width, codec_ctx->height, video_framerate);
+    printf("Time step per frame: %.6f seconds\n", timeStep);
     
-    /* Encode frames */
-    for(i = 0; i < total_frames; i++) {
+    /* Encode frames until JavaScript signals to stop */
+    i = 0;
+    while(i < max_frames) {
         fflush(stdout);
         
-        /* Update surface with new frame from JavaScript */
-        call_duktape_str(frameNumber++);
+        /* Calculate time in seconds for this frame */
+        timeInSeconds = (double)frameNumber * timeStep;
+        
+        /* Update surface with new frame from JavaScript, passing time in seconds */
+        int should_continue = call_duktape_str(timeInSeconds);
+        frameNumber++;
+        
+        /* Check if we should stop */
+        if (!should_continue) {
+            printf("Stopping video generation at frame %d (time: %.4f seconds)\n", i, timeInSeconds);
+            break;
+        }
         
         /* Get the updated surface data - surface may have been recreated */
         cairo_surface_flush(surface);
@@ -654,10 +691,14 @@ static void video_encode_example(const char *filename)
         out_size = encode_frame_to_container(codec_ctx, picture, fmt_ctx, video_stream);
         total_bytes += (out_size > 0) ? out_size : 0;
         
-        if (i % 25 == 0) {
-            printf("encoding frame %3d (size=%5d, total=%d bytes)\n", i, out_size, total_bytes);
+        if (i % video_framerate == 0) {
+            printf("encoding frame %3d (time: %.2fs, size=%5d, total=%d bytes)\n", i, timeInSeconds, out_size, total_bytes);
         }
+        
+        i++;  /* Increment frame counter */
     }
+    
+    printf("Encoded %d frames total (duration: %.2f seconds)\n", i, (double)i / video_framerate);
     
     /* Flush encoder */
     printf("Flushing encoder...\n");
@@ -2288,10 +2329,11 @@ int main(int argc, char **argv)
     char *inputFile = NULL;
     char *outputFile = NULL;
     char *jsFile = NULL;
+    int framerate = 25;  /* Default framerate */
     
     //Specifying the expected options
     //The two options l and b expect numbers as argument
-    while ((option = getopt(argc, argv,"i:o:j:")) != -1) {
+    while ((option = getopt(argc, argv,"i:o:j:r:")) != -1) {
         switch (option) {
             case 'o' :
                 printf("Output file: %s\n", optarg);
@@ -2305,10 +2347,21 @@ int main(int argc, char **argv)
                 printf("JavaScript file: %s\n", optarg);
                 jsFile = optarg;
                 break;
+            case 'r' :
+                framerate = atoi(optarg);
+                if (framerate < 1 || framerate > 120) {
+                    printf("Warning: Invalid framerate %d, using default 25\n", framerate);
+                    framerate = 25;
+                }
+                printf("Framerate: %d fps\n", framerate);
+                break;
             default:
                 exit(EXIT_FAILURE);
         }
     }
+    
+    /* Set the global framerate */
+    video_framerate = framerate;
     
     if(jsFile && outputFile) {
         // Video encoding mode: use JavaScript file to generate frames
@@ -2320,13 +2373,16 @@ int main(int argc, char **argv)
     } else {
         printf("Usage:\n");
         printf("  Video encoding (JS to video):\n");
-        printf("    %s -j <javascript_file> -o <output_video>\n", argv[0]);
+        printf("    %s -j <javascript_file> -o <output_video> [-r <framerate>]\n", argv[0]);
         printf("  XML to PDF:\n");
         printf("    %s -i <input_xml> -o <output_pdf>\n", argv[0]);
         printf("\nOptions:\n");
         printf("  -j  JavaScript file for video frame generation\n");
         printf("  -i  Input XML file\n");
         printf("  -o  Output file (video or PDF)\n");
+        printf("  -r  Framerate in fps (default: 25, range: 1-120)\n");
+        printf("\nNote: The JavaScript processLine(time) function receives time in seconds.\n");
+        printf("      For 25fps: 0.0, 0.04, 0.08, ... For 30fps: 0.0, 0.033, 0.067, ...\n");
     }
     
     return 0;

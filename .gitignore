@@ -2,6 +2,9 @@
 # Dependency directories
 node_modules/
 
+# Build output
+project/bin
+
 # folder files
 data_folder/
 

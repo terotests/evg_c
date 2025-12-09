@@ -473,8 +473,7 @@ static void video_encode_example(const char *filename)
     AVStream *video_stream = NULL;
     AVFrame *picture = NULL;
     
-    int i, ret, size, x, y;
-    uint8_t *picture_buf;
+    int i, ret, x, y;
     
     printf("Video encoding to %s\n", filename);
     
@@ -486,9 +485,13 @@ static void video_encode_example(const char *filename)
     }
     printf("Output format: %s\n", fmt_ctx->oformat->name);
     
-    /* Find encoder - use H.264 for MP4, MPEG1 for MPG */
-    if (strcmp(fmt_ctx->oformat->name, "mp4") == 0 || 
-        strcmp(fmt_ctx->oformat->name, "mov") == 0) {
+    /* Find encoder based on output format */
+    int is_gif = (strcmp(fmt_ctx->oformat->name, "gif") == 0);
+    
+    if (is_gif) {
+        codec = avcodec_find_encoder(AV_CODEC_ID_GIF);
+    } else if (strcmp(fmt_ctx->oformat->name, "mp4") == 0 || 
+               strcmp(fmt_ctx->oformat->name, "mov") == 0) {
         codec = avcodec_find_encoder(AV_CODEC_ID_MPEG4);  /* More compatible than H.264 */
     } else {
         codec = avcodec_find_encoder(AV_CODEC_ID_MPEG1VIDEO);
@@ -521,11 +524,20 @@ static void video_encode_example(const char *filename)
     codec_ctx->bit_rate = video_bitrate;
     codec_ctx->width = video_buf_width;
     codec_ctx->height = video_buf_height;
-    codec_ctx->time_base = (AVRational){1, video_framerate};
-    codec_ctx->framerate = (AVRational){video_framerate, 1};
-    codec_ctx->gop_size = 10;
-    codec_ctx->max_b_frames = 1;
-    codec_ctx->pix_fmt = AV_PIX_FMT_YUV420P;
+    
+    if (is_gif) {
+        codec_ctx->pix_fmt = AV_PIX_FMT_PAL8;  /* GIF requires palette format */
+        codec_ctx->time_base = (AVRational){1, 100};  /* GIF uses centiseconds */
+        codec_ctx->framerate = (AVRational){video_framerate, 1};
+        codec_ctx->gop_size = 0;
+        codec_ctx->max_b_frames = 0;
+    } else {
+        codec_ctx->pix_fmt = AV_PIX_FMT_YUV420P;
+        codec_ctx->time_base = (AVRational){1, video_framerate};
+        codec_ctx->framerate = (AVRational){video_framerate, 1};
+        codec_ctx->gop_size = 10;
+        codec_ctx->max_b_frames = 1;
+    }
     
     /* Some formats want stream headers to be separate */
     if (fmt_ctx->oformat->flags & AVFMT_GLOBALHEADER)
@@ -583,16 +595,15 @@ static void video_encode_example(const char *filename)
     picture->width = codec_ctx->width;
     picture->height = codec_ctx->height;
     
-    /* Allocate frame buffer */
-    size = codec_ctx->width * codec_ctx->height;
-    picture_buf = malloc((size * 3) / 2);
-    
-    picture->data[0] = picture_buf;
-    picture->data[1] = picture->data[0] + size;
-    picture->data[2] = picture->data[1] + size / 4;
-    picture->linesize[0] = codec_ctx->width;
-    picture->linesize[1] = codec_ctx->width / 2;
-    picture->linesize[2] = codec_ctx->width / 2;
+    /* Allocate frame buffer - use av_frame_get_buffer for proper allocation */
+    ret = av_frame_get_buffer(picture, 0);
+    if (ret < 0) {
+        printf("Could not allocate frame buffer\n");
+        av_frame_free(&picture);
+        avcodec_free_context(&codec_ctx);
+        avformat_free_context(fmt_ctx);
+        return;
+    }
     
     cairo_surface_flush(surface);
     char *imgData = cairo_image_surface_get_data(surface);
@@ -643,30 +654,62 @@ static void video_encode_example(const char *filename)
         /* Get the actual stride from Cairo */
         int stride = cairo_image_surface_get_stride(surface);
         
-        /* Convert BGRA to YUV420P */
-        for(y = 0; y < codec_ctx->height; y++) {
-            for(x = 0; x < codec_ctx->width; x++) {
-                /* Use stride instead of width*4 for correct row access */
-                uint8_t b = imgData[y * stride + x*4 + 0];
-                uint8_t g = imgData[y * stride + x*4 + 1];
-                uint8_t r = imgData[y * stride + x*4 + 2];
-                
-                uint8_t YY = ((66*r + 129*g + 25*b) >> 8) + 16;
-                picture->data[0][y * picture->linesize[0] + x] = YY;
-                
-                if ((y % 2 == 0) && (x % 2 == 0)) {
-                    int yy = y / 2;
-                    int xx = x / 2;
-                    uint8_t UU = ((-38*r + -74*g + 112*b) >> 8) + 128;
-                    uint8_t VV = ((112*r + -94*g + -18*b) >> 8) + 128;
-                    picture->data[1][yy * picture->linesize[1] + xx] = UU;
-                    picture->data[2][yy * picture->linesize[2] + xx] = VV;
+        /* Convert BGRA to target pixel format */
+        if (is_gif) {
+            /* For GIF: Convert BGRA to PAL8 (palette-based) */
+            /* First, set up a standard 256-color palette (6-7-6 levels RGB) in data[1] */
+            uint32_t *palette = (uint32_t *)picture->data[1];
+            for (int i = 0; i < 256; i++) {
+                /* Create a standard 8-bit RGB palette (3-3-2 format) */
+                int r = ((i >> 5) & 0x7) * 255 / 7;
+                int g = ((i >> 2) & 0x7) * 255 / 7;
+                int b = (i & 0x3) * 255 / 3;
+                /* Store as BGRA (FFmpeg expects this order for palette) */
+                palette[i] = (255 << 24) | (r << 16) | (g << 8) | b;
+            }
+            
+            /* Convert each pixel to palette index */
+            for(y = 0; y < codec_ctx->height; y++) {
+                for(x = 0; x < codec_ctx->width; x++) {
+                    uint8_t b = imgData[y * stride + x*4 + 0];
+                    uint8_t g = imgData[y * stride + x*4 + 1];
+                    uint8_t r = imgData[y * stride + x*4 + 2];
+                    /* Convert to palette index (3-3-2 format) */
+                    uint8_t idx = ((r >> 5) << 5) | ((g >> 5) << 2) | (b >> 6);
+                    picture->data[0][y * picture->linesize[0] + x] = idx;
+                }
+            }
+        } else {
+            /* For video: Convert BGRA to YUV420P */
+            for(y = 0; y < codec_ctx->height; y++) {
+                for(x = 0; x < codec_ctx->width; x++) {
+                    uint8_t b = imgData[y * stride + x*4 + 0];
+                    uint8_t g = imgData[y * stride + x*4 + 1];
+                    uint8_t r = imgData[y * stride + x*4 + 2];
+                    
+                    uint8_t YY = ((66*r + 129*g + 25*b) >> 8) + 16;
+                    picture->data[0][y * picture->linesize[0] + x] = YY;
+                    
+                    if ((y % 2 == 0) && (x % 2 == 0)) {
+                        int yy = y / 2;
+                        int xx = x / 2;
+                        uint8_t UU = ((-38*r + -74*g + 112*b) >> 8) + 128;
+                        uint8_t VV = ((112*r + -94*g + -18*b) >> 8) + 128;
+                        picture->data[1][yy * picture->linesize[1] + xx] = UU;
+                        picture->data[2][yy * picture->linesize[2] + xx] = VV;
+                    }
                 }
             }
         }
         
         /* Encode the frame */
-        picture->pts = i;
+        if (is_gif) {
+            /* For GIF: PTS in centiseconds (time_base = 1/100) */
+            picture->pts = (int64_t)(timeInSeconds * 100);
+        } else {
+            /* For video: PTS in frame numbers (time_base = 1/framerate) */
+            picture->pts = i;
+        }
         out_size = encode_frame_to_container(codec_ctx, picture, fmt_ctx, video_stream);
         total_bytes += (out_size > 0) ? out_size : 0;
         
@@ -700,7 +743,6 @@ static void video_encode_example(const char *filename)
     printf(" Done!\n");
     
     /* Cleanup */
-    free(picture_buf);
     av_frame_free(&picture);
     avcodec_free_context(&codec_ctx);
     if (!(fmt_ctx->oformat->flags & AVFMT_NOFILE))

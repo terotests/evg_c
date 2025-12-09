@@ -2,9 +2,36 @@
 
 > ⚠️ **EXPERIMENTAL PROJECT** - This is an experimental project and is not intended for production use. The API and functionality may change without notice.
 
+![Santa Claus Animation](santa.gif)
+
+*Example: Santa's sleigh flying across a winter night sky - generated entirely from JavaScript code*
+
 ## Overview
 
 EVG (Experimental Video Generator) is a C-based video encoding system that generates video frames programmatically using JavaScript and XML-based UI definitions. The system renders UI components to video frames using Cairo graphics library and encodes them using FFmpeg/libav libraries.
+
+## Quick Example
+
+Create a simple bouncing ball animation in just a few lines of JavaScript:
+
+```javascript
+function processLine(time) {
+    if (time > 3.0) return "";  // Stop after 3 seconds
+    
+    var y = 200 + Math.abs(Math.sin(time * 4)) * 150;  // Bouncing motion
+    
+    return `
+    <View width="100%" height="100%" background-color="#87CEEB">
+        <View left="100" top="${y}" width="50" height="50" 
+              background-color="#ff0000" border-radius="50%"/>
+    </View>`;
+}
+```
+
+Then generate the video:
+```bash
+./encoder -j bounce.js -o bounce.mp4 -r 30 -w 800 -h 400
+```
 
 ## How It Works
 
@@ -34,15 +61,15 @@ The algorithm works in the following way:
 
 ### Options
 
-| Option | Description                                       |
-| ------ | ------------------------------------------------- |
-| `-j`   | JavaScript file for video frame generation        |
-| `-o`   | Output file (video or PDF)                        |
-| `-i`   | Input XML file (for PDF mode)                     |
-| `-r`   | Framerate in fps (default: 25, range: 1-120)      |
-| `-w`   | Video width in pixels (default: 800, max: 7680)   |
-| `-h`   | Video height in pixels (default: 600, max: 4320)  |
-| `-b`   | Bitrate in kbps (default: 800, range: 100-50000)  |
+| Option | Description                                      |
+| ------ | ------------------------------------------------ |
+| `-j`   | JavaScript file for video frame generation       |
+| `-o`   | Output file (video or PDF)                       |
+| `-i`   | Input XML file (for PDF mode)                    |
+| `-r`   | Framerate in fps (default: 25, range: 1-120)     |
+| `-w`   | Video width in pixels (default: 800, max: 7680)  |
+| `-h`   | Video height in pixels (default: 600, max: 4320) |
+| `-b`   | Bitrate in kbps (default: 800, range: 100-50000) |
 
 ### Examples
 
@@ -58,6 +85,9 @@ The algorithm works in the following way:
 
 # Generate 4K video at 60fps
 ./encoder -j myFile.js -o output.mp4 -w 3840 -h 2160 -r 60 -b 20000
+
+# Generate animated GIF
+./encoder -j myFile.js -o output.gif -w 400 -h 300 -r 15
 ```
 
 ### JavaScript API

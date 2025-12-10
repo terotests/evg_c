@@ -6,6 +6,9 @@
 
 #include <getopt.h>
 
+#include <jpeglib.h>
+#include <setjmp.h>
+
 #include <cairo.h>
 #include <cairo-ft.h>
 #include <cairo-pdf.h>
@@ -79,6 +82,206 @@ static int encode_frame_to_container(AVCodecContext *enc_ctx, AVFrame *frame,
 
 // Example of pure JS XML parser
 // http://ejohn.org/files/htmlparser.js
+
+/* Global base path for resolving relative paths (directory of the JS file) */
+static char *g_base_path = NULL;
+
+/* Get the global base path */
+const char* get_base_path(void) {
+    return g_base_path ? g_base_path : ".";
+}
+
+/* Set the global base path from a file path (extracts directory) */
+static void set_base_path_from_file(const char *filepath) {
+    if (g_base_path) {
+        free(g_base_path);
+        g_base_path = NULL;
+    }
+    
+    if (!filepath) {
+        g_base_path = strdup(".");
+        return;
+    }
+    
+    /* Find the last slash in the path */
+    const char *last_slash = strrchr(filepath, '/');
+    const char *last_backslash = strrchr(filepath, '\\');
+    
+    /* Use whichever slash comes last */
+    if (last_backslash && (!last_slash || last_backslash > last_slash)) {
+        last_slash = last_backslash;
+    }
+    
+    if (last_slash) {
+        size_t dir_len = last_slash - filepath;
+        g_base_path = malloc(dir_len + 1);
+        strncpy(g_base_path, filepath, dir_len);
+        g_base_path[dir_len] = '\0';
+    } else {
+        /* No directory separator, use current directory */
+        g_base_path = strdup(".");
+    }
+    
+    printf("Base path set to: %s\n", g_base_path);
+}
+
+/* Resolve a relative path against the base path */
+char* resolve_path(const char *relative_path) {
+    if (!relative_path) return NULL;
+    
+    /* If path starts with / or contains :, treat as absolute */
+    if (relative_path[0] == '/' || strchr(relative_path, ':') != NULL) {
+        return strdup(relative_path);
+    }
+    
+    /* Build path: base_path + "/" + relative_path */
+    const char *base = get_base_path();
+    size_t base_len = strlen(base);
+    size_t rel_len = strlen(relative_path);
+    
+    /* Check if base already ends with slash */
+    int needs_slash = (base_len > 0 && base[base_len-1] != '/' && base[base_len-1] != '\\');
+    
+    char *result = malloc(base_len + needs_slash + rel_len + 1);
+    strcpy(result, base);
+    if (needs_slash) {
+        strcat(result, "/");
+    }
+    strcat(result, relative_path);
+    
+    return result;
+}
+
+/* JPEG error handling structure */
+struct jpeg_error_mgr_extended {
+    struct jpeg_error_mgr pub;
+    jmp_buf setjmp_buffer;
+};
+
+static void jpeg_error_exit(j_common_ptr cinfo) {
+    struct jpeg_error_mgr_extended *myerr = (struct jpeg_error_mgr_extended *)cinfo->err;
+    longjmp(myerr->setjmp_buffer, 1);
+}
+
+/* Load JPEG image and convert to Cairo surface */
+static cairo_surface_t* cairo_image_surface_create_from_jpeg(const char *filename) {
+    struct jpeg_decompress_struct cinfo;
+    struct jpeg_error_mgr_extended jerr;
+    FILE *infile;
+    JSAMPARRAY buffer;
+    int row_stride;
+    cairo_surface_t *surface = NULL;
+    unsigned char *surface_data = NULL;
+    
+    if ((infile = fopen(filename, "rb")) == NULL) {
+        fprintf(stderr, "Cannot open JPEG file: %s\n", filename);
+        return NULL;
+    }
+    
+    /* Set up error handling */
+    cinfo.err = jpeg_std_error(&jerr.pub);
+    jerr.pub.error_exit = jpeg_error_exit;
+    
+    if (setjmp(jerr.setjmp_buffer)) {
+        /* JPEG error occurred */
+        jpeg_destroy_decompress(&cinfo);
+        fclose(infile);
+        if (surface_data) free(surface_data);
+        fprintf(stderr, "JPEG decompression error: %s\n", filename);
+        return NULL;
+    }
+    
+    jpeg_create_decompress(&cinfo);
+    jpeg_stdio_src(&cinfo, infile);
+    jpeg_read_header(&cinfo, TRUE);
+    
+    /* Force RGB output */
+    cinfo.out_color_space = JCS_RGB;
+    
+    jpeg_start_decompress(&cinfo);
+    
+    int width = cinfo.output_width;
+    int height = cinfo.output_height;
+    row_stride = cinfo.output_width * cinfo.output_components;
+    
+    /* Cairo uses ARGB32 format (4 bytes per pixel) */
+    int cairo_stride = cairo_format_stride_for_width(CAIRO_FORMAT_ARGB32, width);
+    surface_data = (unsigned char *)malloc(cairo_stride * height);
+    
+    if (!surface_data) {
+        jpeg_destroy_decompress(&cinfo);
+        fclose(infile);
+        return NULL;
+    }
+    
+    /* Allocate row buffer */
+    buffer = (*cinfo.mem->alloc_sarray)((j_common_ptr)&cinfo, JPOOL_IMAGE, row_stride, 1);
+    
+    /* Read scanlines and convert RGB to ARGB */
+    int y = 0;
+    while (cinfo.output_scanline < cinfo.output_height) {
+        jpeg_read_scanlines(&cinfo, buffer, 1);
+        
+        unsigned char *dest_row = surface_data + y * cairo_stride;
+        unsigned char *src_row = buffer[0];
+        
+        for (int x = 0; x < width; x++) {
+            unsigned char r = src_row[x * 3 + 0];
+            unsigned char g = src_row[x * 3 + 1];
+            unsigned char b = src_row[x * 3 + 2];
+            
+            /* Cairo ARGB32 is stored as BGRA in memory on little-endian systems */
+            dest_row[x * 4 + 0] = b;  /* Blue */
+            dest_row[x * 4 + 1] = g;  /* Green */
+            dest_row[x * 4 + 2] = r;  /* Red */
+            dest_row[x * 4 + 3] = 255; /* Alpha (fully opaque) */
+        }
+        y++;
+    }
+    
+    jpeg_finish_decompress(&cinfo);
+    jpeg_destroy_decompress(&cinfo);
+    fclose(infile);
+    
+    /* Create Cairo surface from the data */
+    surface = cairo_image_surface_create_for_data(
+        surface_data,
+        CAIRO_FORMAT_ARGB32,
+        width,
+        height,
+        cairo_stride
+    );
+    
+    /* Set user data to free the buffer when surface is destroyed */
+    static cairo_user_data_key_t key;
+    cairo_surface_set_user_data(surface, &key, surface_data, free);
+    
+    return surface;
+}
+
+/* Check if filename has JPEG extension */
+static int is_jpeg_file(const char *filename) {
+    if (!filename) return 0;
+    size_t len = strlen(filename);
+    if (len < 4) return 0;
+    
+    const char *ext = filename + len - 4;
+    if (strcasecmp(ext, ".jpg") == 0 || strcasecmp(ext, ".JPG") == 0) return 1;
+    if (len >= 5) {
+        ext = filename + len - 5;
+        if (strcasecmp(ext, ".jpeg") == 0 || strcasecmp(ext, ".JPEG") == 0) return 1;
+    }
+    return 0;
+}
+
+/* Load image (PNG or JPEG) based on file extension */
+static cairo_surface_t* load_image(const char *filename) {
+    if (is_jpeg_file(filename)) {
+        return cairo_image_surface_create_from_jpeg(filename);
+    } else {
+        return cairo_image_surface_create_from_png(filename);
+    }
+}
 
 void renderXMLToSurface(char *xmlStr);
 
@@ -284,8 +487,8 @@ static void update_cairo_surface(char *txt) {
     
     int faceIdx = 0;
     
-    const char *filePath = "/var/www/static/Creepster/Creepster-Regular.ttf";
-    // const char *filePath = "/var/www/static/Forum/Forum-Regular.ttf";
+    const char *filePath = "./fonts/Creepster/Creepster-Regular.ttf";
+    // const char *filePath = "./fonts/Forum/Forum-Regular.ttf";
     ftError = FT_New_Face(library, filePath, faceIdx, &ftFace);
     if(ftError)  {
         printf("Error FT_New_Face");
@@ -385,7 +588,7 @@ static void create_cairo_pdf() {
         cairo_surface_destroy(surface);
     }
     
-    surface = cairo_pdf_surface_create("/var/www/static/cpp/cairo_test.pdf", 600, 800);
+    surface = cairo_pdf_surface_create("./output/cairo_test.pdf", 600, 800);
     cr = cairo_create(surface);
     
     cairo_set_source_rgb(cr, 120, 0, 0);
@@ -407,8 +610,8 @@ static void create_cairo_pdf() {
     
     int faceIdx = 0;
     
-    const char *filePath = "/var/www/static/Creepster/Creepster-Regular.ttf";
-    // const char *filePath = "/var/www/static/Forum/Forum-Regular.ttf";
+    const char *filePath = "./fonts/Creepster/Creepster-Regular.ttf";
+    // const char *filePath = "./fonts/Forum/Forum-Regular.ttf";
     ftError = FT_New_Face(library, filePath, faceIdx, &ftFace);
     if(ftError)  {
         printf("Error FT_New_Face");
@@ -463,8 +666,8 @@ static void create_cairo() {
         
         int faceIdx = 0;
         
-        const char *filePath = "/var/www/static/Creepster/Creepster-Regular.ttf";
-        // const char *filePath = "/var/www/static/Forum/Forum-Regular.ttf";
+        const char *filePath = "./fonts/Creepster/Creepster-Regular.ttf";
+        // const char *filePath = "./fonts/Forum/Forum-Regular.ttf";
         ftError = FT_New_Face(library, filePath, faceIdx, &ftFace);
         if(ftError)  {
             printf("Error FT_New_Face");
@@ -807,6 +1010,9 @@ static void start_video_encoding(const char *jsFile, const char *outputFile) {
     printf("Loading JavaScript: %s\n", jsFile);
     printf("Output file: %s\n", outputFile);
     
+    /* Set the base path from the JS file location for resolving relative paths */
+    set_base_path_from_file(jsFile);
+    
     /* av_register_all() is deprecated and no longer needed in modern FFmpeg */
     create_cairo();
     
@@ -822,6 +1028,12 @@ static void start_video_encoding(const char *jsFile, const char *outputFile) {
     if(ctx) {
         duk_destroy_heap(ctx);
         ctx = NULL;
+    }
+    
+    /* Clean up base path */
+    if (g_base_path) {
+        free(g_base_path);
+        g_base_path = NULL;
     }
 }
 
@@ -2047,14 +2259,21 @@ static void render_ui(cairo_t *cr, UIStructure *ui) {
     
     if(ui->imageUrl->is_set) {
         // slow if create every time new surface
-        char *img_name = concat("/var/www", ui->imageUrl->s_value);
+        char *img_name = resolve_path(ui->imageUrl->s_value);
+        
+        /* Debug: Print first image path resolution */
+        static int first_image_debug = 1;
+        if (first_image_debug) {
+            printf("Image path resolution: '%s' -> '%s'\n", ui->imageUrl->s_value, img_name);
+            first_image_debug = 0;
+        }
         
         cairo_surface_t *png_surface = NULL;
         
         LinkedListNode *old_surface = List_find(imageList, img_name);
         
         if(old_surface == NULL) {
-            png_surface = cairo_image_surface_create_from_png(img_name);
+            png_surface = load_image(img_name);
             
             /* Check if image loaded successfully - only warn on first failure */
             cairo_status_t status = cairo_surface_status(png_surface);
@@ -2368,13 +2587,10 @@ static char *read_file_contents( char *fileName) {
 
 /*
  Usage:
-    ./encoder -T /var/www/static/templates/ -o koe.mpg
-    ./encoder -T /var/www/static/templates/
+    ./encoder -j myFile.js -o output.mp4
+    ./encoder -i input.xml -o output.pdf
 
-    ./encoder -js myFile.js
- 
- 
- 
+    Images and fonts are loaded relative to the JS file's directory.
 */
 
 int main(int argc, char **argv)

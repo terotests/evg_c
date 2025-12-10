@@ -1124,7 +1124,9 @@ UIStructure *parseXMLNodes( xmlNode *node,  xmlNode *parentNode) {
             parseStringType( ui->svgPath, value );
             xmlFree(value);
         }
-        if(!xmlStrcmp(attribute->name, (const xmlChar *)"imageUrl") || !xmlStrcmp(attribute->name, (const xmlChar *)"src")) {
+        if(!xmlStrcmp(attribute->name, (const xmlChar *)"imageUrl") || 
+           !xmlStrcmp(attribute->name, (const xmlChar *)"image-url") ||
+           !xmlStrcmp(attribute->name, (const xmlChar *)"src")) {
             char *value = xmlNodeListGetString(node->doc, attribute->children, 1);
             parseStringType( ui->imageUrl, value );
             xmlFree(value);

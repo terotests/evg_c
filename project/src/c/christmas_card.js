@@ -1,6 +1,6 @@
 // Christmas Card Border Animation
 // Decorative frame with bells, holly leaves, and berries
-// Center area left empty for adding an image
+// Center area now has a background image
 
 function processLine(time) {
   // 8 second loop animation
@@ -13,8 +13,12 @@ function processLine(time) {
 
   var xml = "";
 
-  // === Background - Clean white ===
+  // === Background - Image with white fallback ===
   xml += '<View width="100%" height="100%" background-color="#FFFFFF">';
+
+  // === Background Image (full screen, no padding) ===
+  xml +=
+    '<View left="0" top="0" width="800" height="600" image-url="img/IMG_2562.JPG"/>';
 
   // === Holly Leaves Function - Using SVG Path ===
   function drawHollyLeaf(x, y, angle, scale, opacity) {
@@ -499,6 +503,82 @@ function processLine(time) {
       sparkleOpacity +
       ')" ' +
       'border-radius="50%"/>';
+  }
+
+  // === Christmas Greeting Text Animation ===
+  // "Hyvää Joulua!" fades in from 0-2s, stays until 4s, fades out 4-5s
+  // "Onnellista Uutta vuotta 2026" fades in from 4-6s, stays until 8s
+
+  var text1Opacity = 0;
+  var text2Opacity = 0;
+
+  // First text: "Hyvää Joulua!"
+  if (time < 2.0) {
+    // Fade in
+    text1Opacity = time / 2.0;
+  } else if (time < 4.0) {
+    // Stay visible
+    text1Opacity = 1.0;
+  } else if (time < 5.0) {
+    // Fade out
+    text1Opacity = 1.0 - (time - 4.0);
+  }
+
+  // Second text: "Onnellista Uutta vuotta 2026"
+  if (time >= 4.0 && time < 6.0) {
+    // Fade in
+    text2Opacity = (time - 4.0) / 2.0;
+  } else if (time >= 6.0) {
+    // Stay visible
+    text2Opacity = 1.0;
+  }
+
+  // Text positions - centered vertically, stacked
+  var text1Y = 250; // "Hyvää Joulua!" position
+  var text2Y = 320; // "Onnellista Uutta vuotta 2026" position (below first text)
+
+  // Draw "Hyvää Joulua!" text
+  if (text1Opacity > 0) {
+    // Text shadow for better readability
+    xml +=
+      '<Label left="0" top="' +
+      (text1Y + 2) +
+      '" width="100%" height="60" ' +
+      'text="Hyvää Joulua!" font-size="52" color="rgba(0,0,0,' +
+      text1Opacity * 0.5 +
+      ')" ' +
+      'align="center"/>';
+    // Main text
+    xml +=
+      '<Label left="0" top="' +
+      text1Y +
+      '" width="100%" height="60" ' +
+      'text="Hyvää Joulua!" font-size="52" color="rgba(255,255,255,' +
+      text1Opacity +
+      ')" ' +
+      'align="center"/>';
+  }
+
+  // Draw "Onnellista Uutta vuotta 2026" text
+  if (text2Opacity > 0) {
+    // Text shadow for better readability
+    xml +=
+      '<Label left="0" top="' +
+      (text2Y + 2) +
+      '" width="100%" height="60" ' +
+      'text="Onnellista Uutta vuotta 2026" font-size="42" color="rgba(0,0,0,' +
+      text2Opacity * 0.5 +
+      ')" ' +
+      'align="center"/>';
+    // Main text
+    xml +=
+      '<Label left="0" top="' +
+      text2Y +
+      '" width="100%" height="60" ' +
+      'text="Onnellista Uutta vuotta 2026" font-size="42" color="rgba(255,255,255,' +
+      text2Opacity +
+      ')" ' +
+      'align="center"/>';
   }
 
   xml += "</View>";

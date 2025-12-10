@@ -126,7 +126,7 @@ static void set_base_path_from_file(const char *filepath) {
 }
 
 /* Resolve a relative path against the base path */
-static char* resolve_path(const char *relative_path) {
+char* resolve_path(const char *relative_path) {
     if (!relative_path) return NULL;
     
     /* If path starts with / or contains :, treat as absolute */

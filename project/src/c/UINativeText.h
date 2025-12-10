@@ -28,6 +28,10 @@ void popGlobalAlpha();
 
 double setTextAlpha( double usingValue  );
 
+// Path resolution functions (from video_encoder.c)
+const char* get_base_path(void);
+char* resolve_path(const char *relative_path);
+
 // test
 void pango_draw_test(cairo_t *cr);
 

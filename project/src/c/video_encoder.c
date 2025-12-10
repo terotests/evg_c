@@ -560,15 +560,6 @@ static int call_duktape_str(double timeInSeconds) {
                 printf("DEBUG: processLine returned '%s' at time %.2f\n", resVal, timeInSeconds);
                 should_continue = 0;
             } else {
-                /* Debug: Print first frame's XML to file */
-                if (timeInSeconds < 0.01) {
-                    FILE *debugFile = fopen("frame_debug.xml", "w");
-                    if (debugFile) {
-                        fprintf(debugFile, "%s\n", resVal);
-                        fclose(debugFile);
-                        printf("DEBUG: Wrote first frame XML to frame_debug.xml (length: %zu)\n", strlen(resVal));
-                    }
-                }
                 renderXMLToSurface(resVal);
             }
         }

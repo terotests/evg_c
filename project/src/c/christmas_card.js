@@ -1,6 +1,7 @@
 // Christmas Card Border Animation
 // Decorative frame with bells, holly leaves, and berries
 // Center area now has a background image
+// Includes Santa sleigh flying across
 
 function processLine(time) {
   // 8 second loop animation
@@ -12,6 +13,11 @@ function processLine(time) {
   var centerY = height / 2;
 
   var xml = "";
+
+  // === SANTA SLEIGH PATHS ===
+  // Reindeer silhouette (simplified, facing right)
+  var reindeerPath =
+    "M0,20 L5,15 L8,18 L10,10 L12,5 L15,8 L14,12 L18,10 L22,12 L20,15 L25,14 L30,16 L28,20 L32,22 L30,28 L25,26 L20,28 L15,26 L10,28 L5,25 L0,28 Z M12,3 L14,0 L16,4 M16,3 L18,0 L19,4";
 
   // === Background - Image with white fallback ===
   xml += '<View width="100%" height="100%" background-color="#FFFFFF">';
@@ -508,6 +514,81 @@ function processLine(time) {
   // === Christmas Greeting Text Animation ===
   // "Hyvää Joulua!" fades in from 0-2s, stays until 4s, fades out 4-5s
   // "Onnellista Uutta vuotta 2026" fades in from 4-6s, stays until 8s
+
+  // === SANTA SLEIGH ANIMATION ===
+  // Sleigh moves from right to left across the sky (below the text)
+  var sleighX = 900 - time * 120; // Move left over time
+  var sleighY = 420 + Math.sin(time * 2) * 15; // Gentle bobbing, positioned below text
+
+  // Slight rotation for dynamic feel
+  var sleighRotate = Math.sin(time * 3) * 3;
+
+  // Reindeer positions (4 reindeer in formation)
+  var reindeerSpacing = 40;
+  var reindeerLeadX = sleighX - 50;
+
+  // Leg animation for reindeer (galloping effect)
+  var legPhase = time * 8;
+
+  // Build reindeer elements (2 rows of 2)
+  for (var r = 0; r < 4; r++) {
+    var row = Math.floor(r / 2);
+    var col = r % 2;
+    var rx = reindeerLeadX - row * reindeerSpacing;
+    var ry = sleighY - 10 + col * 20 - 10;
+    var bounce = Math.sin(legPhase + r * 0.5) * 4;
+
+    xml +=
+      '<View left="' +
+      rx +
+      '" top="' +
+      (ry + bounce) +
+      '" width="30" height="25" opacity="1">' +
+      '<View width="30" height="25" background-color="#4a3728" path="' +
+      reindeerPath +
+      '"/>' +
+      "</View>";
+  }
+
+  // Reins connecting reindeer to sleigh
+  var reinsY = sleighY + 3;
+  xml +=
+    '<View left="' +
+    (reindeerLeadX + 25) +
+    '" top="' +
+    reinsY +
+    '" width="' +
+    (sleighX - reindeerLeadX - 20) +
+    '" height="2" background-color="#3d2817" opacity="0.7"/>';
+
+  // Sleigh
+  xml +=
+    '<View left="' +
+    sleighX +
+    '" top="' +
+    sleighY +
+    '" width="50" height="40" rotate="' +
+    sleighRotate +
+    '">' +
+    // Sleigh body
+    '<View width="45" height="28" background-color="#8b0000" border-radius="8"/>' +
+    // Sleigh runners
+    '<View left="0" top="24" width="50" height="6" background-color="#4a3728" border-radius="4"/>' +
+    // Santa silhouette
+    '<View left="8" top="-15" width="30" height="25">' +
+    // Body
+    '<View left="4" top="8" width="20" height="16" background-color="#cc0000" border-radius="4"/>' +
+    // Head
+    '<View left="8" top="0" width="12" height="12" background-color="#ffdbac" border-radius="50%"/>' +
+    // Hat
+    '<View left="6" top="-6" width="14" height="10" background-color="#cc0000" border-radius="3"/>' +
+    '<View left="18" top="-8" width="6" height="6" background-color="#ffffff" border-radius="50%"/>' +
+    // Beard
+    '<View left="6" top="6" width="14" height="8" background-color="#ffffff" border-radius="0 0 8px 8px"/>' +
+    "</View>" +
+    // Gift sack
+    '<View left="30" top="-8" width="15" height="20" background-color="#8b4513" border-radius="8 8 4 4"/>' +
+    "</View>";
 
   var text1Opacity = 0;
   var text2Opacity = 0;

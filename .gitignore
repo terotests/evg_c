@@ -28,6 +28,9 @@ duktape-2.5.0/
 .DS_Store
 .idea/
 
+# Debug files
+frame_debug.xml
+
 # TypeScript compiled .map files
 *.map  
 
